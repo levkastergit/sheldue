@@ -18,6 +18,9 @@
 
             <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
             <converters:NullToInverseVisibilityConverter x:Key="NullToInverseVisibilityConverter" />
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+            <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
+            <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
             <helpers:NullToRoomTypeSentinelConverter x:Key="NullToRoomTypeSentinelConverter" />
 
             <!-- Единый вид заголовка раздела на каждой странице -->

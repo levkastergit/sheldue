@@ -6,7 +6,12 @@ namespace SchoolSchedule.Core.Models;
 /// </summary>
 public class ScheduleSettings
 {
-    public int Id { get; set; } = 1;
+    // Без явного дефолта у Id (обычный 0, как у всех остальных сущностей) — это чисто
+    // in-memory значение нового объекта до сохранения; реальный Id всегда назначает
+    // автоинкремент SQLite. Явный "= 1" здесь раньше ломал проверку "ещё не сохранено"
+    // (Id == 0) в ScheduleViewModel — новые настройки выглядели уже сохранёнными, хотя
+    // в базе строки не было.
+    public int Id { get; set; }
 
     public int DaysPerWeek { get; set; } = 6;
     public int PeriodsPerDayShift1 { get; set; } = 7;

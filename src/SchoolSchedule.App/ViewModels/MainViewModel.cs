@@ -39,6 +39,7 @@ public partial class MainViewModel : ObservableObject
         ClassesPage classesPage,
         CurriculumPage curriculumPage,
         AssignmentsPage assignmentsPage,
+        SchedulePage schedulePage,
         ISnackbarService snackbarService)
     {
         SnackbarMessageQueue = snackbarService.MessageQueue;
@@ -52,7 +53,7 @@ public partial class MainViewModel : ObservableObject
 
             new() { Title = "Учебный план", Icon = PackIconKind.ClipboardText, Group = GroupPlanning, Page = curriculumPage },
             new() { Title = "Назначения", Icon = PackIconKind.AccountSwitch, Group = GroupPlanning, Page = assignmentsPage },
-            BuildPlaceholder("Расписание", PackIconKind.CalendarClock, GroupPlanning),
+            new() { Title = "Расписание", Icon = PackIconKind.CalendarClock, Group = GroupPlanning, Page = schedulePage },
 
             BuildPlaceholder("Замены и отпуска", PackIconKind.CalendarRemove, GroupManagement),
             BuildPlaceholder("Настройки", PackIconKind.Cog, GroupManagement),

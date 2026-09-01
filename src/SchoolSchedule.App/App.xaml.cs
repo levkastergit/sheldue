@@ -64,6 +64,8 @@ public partial class App : Application
                     services.AddSingleton<CurriculumPage>();
                     services.AddSingleton<AssignmentsViewModel>();
                     services.AddSingleton<AssignmentsPage>();
+                    services.AddSingleton<ScheduleViewModel>();
+                    services.AddSingleton<SchedulePage>();
 
                     services.AddSingleton<MainViewModel>();
                     services.AddSingleton<MainWindow>();
