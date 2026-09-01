@@ -48,9 +48,10 @@
                         </DataGridTemplateColumn.CellTemplate>
                         <DataGridTemplateColumn.CellEditingTemplate>
                             <DataTemplate>
-                                <ComboBox ItemsSource="{Binding QualifiedTeachers}"
-                                          SelectedValuePath="Id" DisplayMemberPath="FullName"
-                                          SelectedValue="{Binding TeacherId, UpdateSourceTrigger=PropertyChanged}"
+                                <ComboBox Style="{StaticResource MaterialDesignComboBox}"
+                                          ItemsSource="{Binding QualifiedTeachers}"
+                                          DisplayMemberPath="FullName"
+                                          SelectedItem="{Binding SelectedTeacher, UpdateSourceTrigger=PropertyChanged}"
                                           materialDesign:HintAssist.Hint="Нет подходящих по предмету учителей"
                                           IsEditable="False" />
                             </DataTemplate>

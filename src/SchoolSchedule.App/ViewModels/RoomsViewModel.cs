@@ -159,11 +159,14 @@ public partial class RoomsViewModel : ObservableObject
             return;
         }
 
-        var room = new Room { Name = "Новый кабинет", Capacity = 25, RoomTypeId = AllRoomTypes[0].Id };
+        // По умолчанию — тип "Обычный" (он есть в стартовом наборе миграции), а не первый по
+        // алфавиту (им может оказаться, например, "Актовый зал").
+        var defaultType = AllRoomTypes.FirstOrDefault(rt => rt.Name == "Обычный") ?? AllRoomTypes[0];
+        var room = new Room { Name = "Новый кабинет", Capacity = 25, RoomTypeId = defaultType.Id };
         _context.Rooms.Add(room);
         if (await TrySaveAsync("добавить кабинет"))
         {
-            room.RoomType = AllRoomTypes[0];
+            room.RoomType = defaultType;
             Rooms.Add(room);
             SelectedRoom = room;
         }

@@ -27,6 +27,21 @@ public class RoomsViewModelTests
     }
 
     [Fact]
+    public async Task Add_defaults_to_the_ordinary_room_type_not_the_alphabetically_first_one()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var vm = new RoomsViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+        // "Актовый зал" сортируется раньше "Обычный" по алфавиту — если бы дефолт брался
+        // по порядку списка, а не по имени, тест поймал бы это.
+        Assert.Contains(vm.AllRoomTypes, rt => rt.Name == "Актовый зал");
+
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Equal("Обычный", vm.Rooms[0].RoomType.Name);
+    }
+
+    [Fact]
     public async Task Editing_name_and_saving_persists_the_change()
     {
         using var factory = new SqliteTestContextFactory();

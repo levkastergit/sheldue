@@ -51,6 +51,7 @@ public partial class AssignmentsViewModel : ObservableObject
         var groups = await _context.ClassSubjectGroups
             .Include(g => g.Class)
             .Include(g => g.Subject)
+            .Include(g => g.Teacher)
             .OrderBy(g => g.Class.Grade).ThenBy(g => g.Class.Name)
             .ThenBy(g => g.Subject.Name).ThenBy(g => g.GroupLabel)
             .ToListAsync();

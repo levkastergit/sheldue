@@ -83,16 +83,23 @@ public partial class CurriculumViewModel : ObservableObject
             return;
         }
 
+        // Подставляем первый ещё не занятый (без подгруппы) предмет, а не всегда первый по
+        // алфавиту — иначе повторное нажатие "Добавить" каждый раз пытается вставить тот же
+        // предмет, что уже есть в плане, и падает на уникальном индексе, не давая дойти до
+        // выбора нужного предмета в самой строке.
+        var usedSubjectIds = Groups.Where(g => g.GroupLabel is null).Select(g => g.SubjectId).ToHashSet();
+        var subject = AllSubjects.FirstOrDefault(s => !usedSubjectIds.Contains(s.Id)) ?? AllSubjects[0];
+
         var group = new ClassSubjectGroup
         {
             ClassId = SelectedClass.Id,
-            SubjectId = AllSubjects[0].Id,
+            SubjectId = subject.Id,
             LessonsPerWeek = 1,
         };
         _context.ClassSubjectGroups.Add(group);
         if (await TrySaveAsync("добавить предмет в учебный план"))
         {
-            group.Subject = AllSubjects[0];
+            group.Subject = subject;
             Groups.Add(group);
         }
         else

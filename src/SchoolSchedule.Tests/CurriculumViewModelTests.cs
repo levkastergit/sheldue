@@ -56,6 +56,33 @@ public class CurriculumViewModelTests
     }
 
     [Fact]
+    public async Task Adding_a_second_time_picks_a_different_not_yet_used_subject()
+    {
+        // Раньше "Добавить" всегда подставлял первый по алфавиту предмет, поэтому вторая
+        // попытка добавить строку падала на уникальном индексе (тот же предмет уже есть в
+        // плане) прежде, чем пользователь успевал выбрать нужный предмет в самой строке.
+        using var factory = new SqliteTestContextFactory();
+        await using (var seed = factory.CreateDbContext())
+        {
+            var schoolClass = new SchoolClass { Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+            seed.SchoolClasses.Add(schoolClass);
+            seed.Subjects.AddRange(new Subject { Name = "Математика" }, new Subject { Name = "Русский язык" });
+            await seed.SaveChangesAsync();
+        }
+        var snackbar = new FakeSnackbarService();
+
+        var vm = new CurriculumViewModel(factory, snackbar);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        await vm.AddCommand.ExecuteAsync(null);
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Empty(snackbar.Messages);
+        Assert.Equal(2, vm.Groups.Count);
+        Assert.Equal(2, vm.Groups.Select(g => g.SubjectId).Distinct().Count());
+    }
+
+    [Fact]
     public async Task Same_subject_twice_without_group_label_is_rejected_as_duplicate()
     {
         using var factory = new SqliteTestContextFactory();
