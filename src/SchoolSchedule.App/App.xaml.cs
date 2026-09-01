@@ -2,6 +2,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -77,10 +78,7 @@ public partial class App : Application
             // Применяем миграции при каждом запуске — база сама создаётся/обновляется без ручных шагов.
             var dbFactory = _host.Services.GetRequiredService<IDbContextFactory<SchoolScheduleDbContext>>();
             StartupLogger.Log("Применяю миграции БД...");
-            await using (var db = await dbFactory.CreateDbContextAsync())
-            {
-                await db.Database.MigrateAsync();
-            }
+            await MigrateWithRecoveryAsync(dbFactory, dbPath);
             StartupLogger.Log("Миграции БД применены успешно");
 
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
@@ -92,6 +90,61 @@ public partial class App : Application
         {
             StartupLogger.LogException("OnStartup", ex);
             ShowFatalErrorAndShutdown(ex);
+        }
+    }
+
+    /// <summary>
+    /// Пытается применить миграции; если это падает (обычно — "FOREIGN KEY constraint failed" или
+    /// похожая ошибка из-за файла базы, оставшегося от несовместимой более старой версии
+    /// приложения, схема которой ещё активно меняется), пересоздаёт базу с нуля вместо того,
+    /// чтобы просто уронить всё приложение на старте.
+    /// </summary>
+    private static async Task MigrateWithRecoveryAsync(IDbContextFactory<SchoolScheduleDbContext> dbFactory, string dbPath)
+    {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            await db.Database.MigrateAsync();
+            return;
+        }
+        catch (Exception ex)
+        {
+            StartupLogger.LogException(
+                "Миграция БД — похоже, файл базы остался от несовместимой старой версии приложения. Пересоздаю базу с нуля",
+                ex);
+        }
+
+        // Microsoft.Data.Sqlite пулит соединения — файл остаётся открытым, пока пул не очищен явно,
+        // иначе следующий File.Delete падает с "процесс не может получить доступ к файлу".
+        SqliteConnection.ClearAllPools();
+
+        foreach (var suffix in new[] { "", "-shm", "-wal" })
+        {
+            var path = dbPath + suffix;
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                StartupLogger.Log($"Удалён устаревший файл базы: {path}");
+            }
+        }
+
+        await using var freshDb = await dbFactory.CreateDbContextAsync();
+        await freshDb.Database.MigrateAsync();
+        StartupLogger.Log("База данных пересоздана с нуля после сброса");
+
+        try
+        {
+            MessageBox.Show(
+                "Формат базы данных обновился с прошлой версии приложения, поэтому локальные " +
+                "данные (кабинеты, учителя, классы и т.д.) были сброшены — начните ввод заново.\n\n" +
+                "Само приложение сейчас откроется в обычном режиме.",
+                "Расписание школы — база данных обновлена",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch
+        {
+            // Не показать уведомление — не критично, событие уже есть в логе.
         }
     }
 

@@ -15,3 +15,6 @@ obj/
 
 ## Логи/публикация
 publish/
+startup-*.log
+diagnose-log.txt
+*.zip
