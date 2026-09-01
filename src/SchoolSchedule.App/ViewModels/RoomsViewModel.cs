@@ -176,6 +176,12 @@ public partial class RoomsViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveRoomAsync(Room room)
     {
+        // Синхронно, до await: смена RoomTypeId в комбобоксе не обновляет навигационное свойство
+        // RoomType сама по себе (EF пересвяжет его только при следующем SaveChanges/запросе), а
+        // ячейка "Тип кабинета" в гриде читает именно RoomType.Name — без этой строки после выбора
+        // нового типа ячейка ещё долю секунды показывает старое значение (или пустоту), пока не
+        // дойдёт async-сохранение. Строка ниже убирает эту гонку.
+        room.RoomType = AllRoomTypes.FirstOrDefault(rt => rt.Id == room.RoomTypeId) ?? room.RoomType;
         await TrySaveAsync("сохранить кабинет");
     }
 

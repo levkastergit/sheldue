@@ -70,6 +70,12 @@ public partial class SubjectsViewModel : ObservableObject
         if (subject.RequiredRoomTypeId == 0)
             subject.RequiredRoomTypeId = null;
 
+        // Синхронно, до await — та же гонка навигационного свойства, что и в RoomsViewModel: смена
+        // RequiredRoomTypeId сама по себе не обновляет RequiredRoomType, а ячейка читает именно его.
+        subject.RequiredRoomType = subject.RequiredRoomTypeId is null
+            ? null
+            : RoomTypeOptions.FirstOrDefault(rt => rt.Id == subject.RequiredRoomTypeId);
+
         await TrySaveAsync("сохранить предмет");
     }
 

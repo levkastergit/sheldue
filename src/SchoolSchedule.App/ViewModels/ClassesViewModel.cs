@@ -75,6 +75,14 @@ public partial class ClassesViewModel : ObservableObject
         // ("5А" -> 5), чтобы классы по-прежнему сортировались по возрастанию, а не по алфавиту
         // (иначе "10А" оказался бы раньше "5А").
         schoolClass.Grade = ParseGrade(schoolClass.Name);
+
+        // Синхронно, до await — та же гонка навигационного свойства, что и в RoomsViewModel:
+        // смена HomeRoomId сама по себе не обновляет HomeRoom, а ячейка "Классный кабинет" читает
+        // именно его.
+        schoolClass.HomeRoom = schoolClass.HomeRoomId is null
+            ? null
+            : AllRooms.FirstOrDefault(r => r.Id == schoolClass.HomeRoomId);
+
         await TrySaveAsync("сохранить класс");
     }
 

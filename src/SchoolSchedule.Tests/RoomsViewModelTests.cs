@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.Input;
 using SchoolSchedule.App.ViewModels;
 using SchoolSchedule.Core.Models;
 using SchoolSchedule.Tests.TestSupport;
@@ -136,5 +137,30 @@ public class RoomsViewModelTests
         {
             Assert.Empty(check.RoomTeacherAssignments);
         }
+    }
+
+    [Fact]
+    public async Task Changing_room_type_updates_navigation_property_immediately_not_only_after_save_completes()
+    {
+        // Регрессия: смена RoomTypeId в комбобоксе сама по себе не обновляет навигационное свойство
+        // RoomType, а ячейка "Тип кабинета" в гриде читает именно его — без синхронного фикса в
+        // SaveRoomAsync ячейка на долю секунды показывала старое/пустое значение до завершения
+        // асинхронного сохранения (то, что видел пользователь до перехода на другую вкладку и обратно).
+        using var factory = new SqliteTestContextFactory();
+        var vm = new RoomsViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var room = vm.Rooms[0];
+        var newType = vm.AllRoomTypes.First(rt => rt.Id != room.RoomTypeId);
+        room.RoomTypeId = newType.Id;
+
+        vm.SaveRoomCommand.Execute(room);
+        // Проверяем сразу, без await — именно это видит WPF при синхронном возврате в режим
+        // отображения ячейки сразу после RowEditEnding.
+        Assert.Equal(newType.Name, room.RoomType?.Name);
+
+        if (vm.SaveRoomCommand is IAsyncRelayCommand { ExecutionTask: { } task })
+            await task;
     }
 }

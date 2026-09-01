@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.Input;
 using SchoolSchedule.App.ViewModels;
 using SchoolSchedule.Core.Models;
 using SchoolSchedule.Tests.TestSupport;
@@ -94,5 +95,30 @@ public class ClassesViewModelTests
         await vm.DeleteCommand.ExecuteAsync(vm.Classes[0]);
 
         Assert.Empty(vm.Classes);
+    }
+
+    [Fact]
+    public async Task Changing_home_room_updates_navigation_property_immediately_not_only_after_save_completes()
+    {
+        using var factory = new SqliteTestContextFactory();
+        await using (var seed = factory.CreateDbContext())
+        {
+            seed.Rooms.Add(new Room { Name = "101", Capacity = 25, RoomTypeId = 1 });
+            await seed.SaveChangesAsync();
+        }
+
+        var vm = new ClassesViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var schoolClass = vm.Classes[0];
+        var room = vm.AllRooms[0];
+        schoolClass.HomeRoomId = room.Id;
+
+        vm.SaveClassCommand.Execute(schoolClass);
+        Assert.Equal(room.Name, schoolClass.HomeRoom?.Name);
+
+        if (vm.SaveClassCommand is IAsyncRelayCommand { ExecutionTask: { } task })
+            await task;
     }
 }

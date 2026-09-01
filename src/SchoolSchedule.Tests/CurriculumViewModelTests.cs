@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.Input;
 using SchoolSchedule.App.ViewModels;
 using SchoolSchedule.Core.Models;
 using SchoolSchedule.Tests.TestSupport;
@@ -135,5 +136,31 @@ public class CurriculumViewModelTests
         await vm.DeleteCommand.ExecuteAsync(vm.Groups[0]);
 
         Assert.Empty(vm.Groups);
+    }
+
+    [Fact]
+    public async Task Changing_subject_updates_navigation_property_immediately_not_only_after_save_completes()
+    {
+        using var factory = new SqliteTestContextFactory();
+        await SeedClassAndSubjectAsync(factory); // "Математика"
+        await using (var seed = factory.CreateDbContext())
+        {
+            seed.Subjects.Add(new Subject { Name = "Литература" });
+            await seed.SaveChangesAsync();
+        }
+
+        var vm = new CurriculumViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var group = vm.Groups[0];
+        var newSubject = vm.AllSubjects.First(s => s.Id != group.SubjectId);
+        group.SubjectId = newSubject.Id;
+
+        vm.SaveGroupCommand.Execute(group);
+        Assert.Equal(newSubject.Name, group.Subject?.Name);
+
+        if (vm.SaveGroupCommand is IAsyncRelayCommand { ExecutionTask: { } task })
+            await task;
     }
 }

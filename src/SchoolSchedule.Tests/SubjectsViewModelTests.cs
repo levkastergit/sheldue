@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.Input;
 using SchoolSchedule.App.ViewModels;
 using SchoolSchedule.Core.Models;
 using SchoolSchedule.Tests.TestSupport;
@@ -60,5 +61,24 @@ public class SubjectsViewModelTests
         await vm.SaveSubjectCommand.ExecuteAsync(subject);
 
         Assert.Null(subject.RequiredRoomTypeId);
+    }
+
+    [Fact]
+    public async Task Changing_required_room_type_updates_navigation_property_immediately_not_only_after_save_completes()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var vm = new SubjectsViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var subject = vm.Subjects[0];
+        var sportsHall = vm.RoomTypeOptions.Single(rt => rt.Name == "Спортзал");
+        subject.RequiredRoomTypeId = sportsHall.Id;
+
+        vm.SaveSubjectCommand.Execute(subject);
+        Assert.Equal("Спортзал", subject.RequiredRoomType?.Name);
+
+        if (vm.SaveSubjectCommand is IAsyncRelayCommand { ExecutionTask: { } task })
+            await task;
     }
 }
