@@ -1,0 +1,63 @@
+<UserControl x:Class="SchoolSchedule.App.Views.AssignmentsPage"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             mc:Ignorable="d"
+             Loaded="AssignmentsPage_OnLoaded"
+             d:DesignHeight="600" d:DesignWidth="1000">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Назначения" Style="{StaticResource PageTitleStyle}" Margin="0,0,0,20" />
+
+        <DockPanel Grid.Row="1" Margin="0,0,0,16">
+            <TextBlock Text="Фильтр по классу:" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="Medium" />
+            <Button DockPanel.Dock="Right" Style="{StaticResource AppFlatButton}"
+                    Content="Показать все" Margin="12,0,0,0"
+                    Command="{Binding ClearClassFilterCommand}" />
+            <ComboBox Width="200" HorizontalAlignment="Left"
+                      materialDesign:HintAssist.Hint="Все классы"
+                      ItemsSource="{Binding AllClasses}"
+                      SelectedItem="{Binding ClassFilter}"
+                      DisplayMemberPath="Name" />
+        </DockPanel>
+
+        <materialDesign:Card Grid.Row="2" Padding="0">
+            <DataGrid ItemsSource="{Binding Rows}"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      RowEditEnding="DataGrid_OnRowEditEnding">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Класс" Binding="{Binding ClassName}" IsReadOnly="True" Width="*" />
+                    <DataGridTextColumn Header="Предмет" Binding="{Binding SubjectName}" IsReadOnly="True" Width="1.4*" />
+                    <DataGridTextColumn Header="Подгруппа" Binding="{Binding GroupLabel}" IsReadOnly="True" Width="1.2*" />
+                    <DataGridTextColumn Header="Уроков/нед." Binding="{Binding LessonsPerWeek}" IsReadOnly="True" Width="*" />
+                    <DataGridTemplateColumn Header="Учитель" Width="2.2*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding TeacherName}" VerticalAlignment="Center" Margin="8,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate>
+                                <ComboBox ItemsSource="{Binding QualifiedTeachers}"
+                                          SelectedValuePath="Id" DisplayMemberPath="FullName"
+                                          SelectedValue="{Binding TeacherId, UpdateSourceTrigger=PropertyChanged}"
+                                          materialDesign:HintAssist.Hint="Нет подходящих по предмету учителей"
+                                          IsEditable="False" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </materialDesign:Card>
+    </Grid>
+</UserControl>

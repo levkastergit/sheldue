@@ -1,0 +1,118 @@
+<UserControl x:Class="SchoolSchedule.App.Views.TeachersPage"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:helpers="clr-namespace:SchoolSchedule.App.Helpers"
+             mc:Ignorable="d"
+             Loaded="TeachersPage_OnLoaded"
+             d:DesignHeight="650" d:DesignWidth="1100">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="Учителя" Style="{StaticResource PageTitleStyle}" />
+            <Button DockPanel.Dock="Right" HorizontalAlignment="Right"
+                    Style="{StaticResource AppRaisedButton}"
+                    Command="{Binding AddCommand}">
+                <StackPanel Orientation="Horizontal">
+                    <materialDesign:PackIcon Kind="Plus" Margin="0,0,8,0" />
+                    <TextBlock Text="Добавить учителя" />
+                </StackPanel>
+            </Button>
+        </DockPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.6*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="1*" MinWidth="320" />
+            </Grid.ColumnDefinitions>
+
+            <materialDesign:Card Grid.Column="0" Padding="0">
+                <DataGrid ItemsSource="{Binding Teachers}"
+                          SelectedItem="{Binding SelectedTeacher}"
+                          AutoGenerateColumns="False"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          RowEditEnding="DataGrid_OnRowEditEnding">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="ФИО" Binding="{Binding FullName, UpdateSourceTrigger=PropertyChanged}" Width="3*" />
+                        <DataGridTextColumn Header="Часов/нед." Binding="{Binding MaxLessonsPerWeek, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                        <DataGridTemplateColumn Header="" Width="60">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource MaterialDesignIconButton}"
+                                            Command="{Binding DataContext.DeleteCommand, ElementName=Root}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="Удалить учителя">
+                                        <materialDesign:PackIcon Kind="Delete" />
+                                    </Button>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </materialDesign:Card>
+
+            <materialDesign:Card Grid.Column="2" Padding="20">
+                <StackPanel>
+                    <TextBlock Text="Выберите учителя слева" Opacity="0.6"
+                               Visibility="{Binding SelectedTeacher, Converter={StaticResource NullToInverseVisibilityConverter}, FallbackValue=Visible}" />
+
+                    <StackPanel Visibility="{Binding SelectedTeacher, Converter={StaticResource NullToVisibilityConverter}, FallbackValue=Collapsed}">
+                        <TextBlock Text="{Binding SelectedTeacher.FullName}" FontSize="19" FontWeight="SemiBold" Margin="0,0,0,20" />
+
+                        <TextBlock Text="Может вести предметы" Style="{StaticResource SectionLabelStyle}" />
+                        <ItemsControl ItemsSource="{Binding SubjectSelections}" Margin="0,0,0,24">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,3" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="Недоступен (окна в расписании)" Style="{StaticResource SectionLabelStyle}" />
+                        <ItemsControl ItemsSource="{Binding Unavailabilities}" Margin="0,0,0,8">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,2">
+                                        <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconButton}"
+                                                Width="28" Height="28"
+                                                Command="{Binding DataContext.RemoveUnavailabilityCommand, ElementName=Root}"
+                                                CommandParameter="{Binding}">
+                                            <materialDesign:PackIcon Kind="Close" Width="16" Height="16" />
+                                        </Button>
+                                        <TextBlock VerticalAlignment="Center">
+                                            <Run Text="{Binding Day, Mode=OneWay}" />
+                                            <Run Text=", урок №" />
+                                            <Run Text="{Binding PeriodNumber, Mode=OneWay}" />
+                                        </TextBlock>
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Margin="0,8,0,0">
+                            <ComboBox Margin="0,0,0,10"
+                                      materialDesign:HintAssist.Hint="День"
+                                      ItemsSource="{x:Static helpers:EnumSource.SchoolDays}"
+                                      SelectedItem="{Binding NewUnavailabilityDay}" />
+                            <TextBox Margin="0,0,0,12"
+                                     materialDesign:HintAssist.Hint="Урок №"
+                                     Text="{Binding NewUnavailabilityPeriod, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Content="Добавить" HorizontalAlignment="Left"
+                                    Style="{StaticResource AppRaisedButton}"
+                                    Command="{Binding AddUnavailabilityCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </materialDesign:Card>
+        </Grid>
+    </Grid>
+</UserControl>

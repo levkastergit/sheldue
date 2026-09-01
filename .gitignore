@@ -1,0 +1,17 @@
+## .NET
+bin/
+obj/
+*.user
+
+## IDE
+.vs/
+.vscode/
+*.suo
+
+## Локальная база данных (создаётся приложением в %LocalAppData%, но на всякий случай)
+*.db
+*.db-shm
+*.db-wal
+
+## Логи/публикация
+publish/

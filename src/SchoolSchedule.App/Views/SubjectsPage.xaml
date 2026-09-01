@@ -1,0 +1,70 @@
+<UserControl x:Class="SchoolSchedule.App.Views.SubjectsPage"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             mc:Ignorable="d"
+             Loaded="SubjectsPage_OnLoaded"
+             d:DesignHeight="600" d:DesignWidth="900">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="Предметы" Style="{StaticResource PageTitleStyle}" />
+            <Button DockPanel.Dock="Right" HorizontalAlignment="Right"
+                    Style="{StaticResource AppRaisedButton}"
+                    Command="{Binding AddCommand}">
+                <StackPanel Orientation="Horizontal">
+                    <materialDesign:PackIcon Kind="Plus" Margin="0,0,8,0" />
+                    <TextBlock Text="Добавить предмет" />
+                </StackPanel>
+            </Button>
+        </DockPanel>
+
+        <materialDesign:Card Grid.Row="1" Padding="0">
+            <DataGrid ItemsSource="{Binding Subjects}"
+                      SelectedItem="{Binding SelectedSubject}"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      RowEditEnding="DataGrid_OnRowEditEnding">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Название" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="2*" />
+                    <DataGridTemplateColumn Header="Требуемый тип кабинета (если важен)" Width="3*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding RequiredRoomType.Name, TargetNullValue='Не важно'}"
+                                           VerticalAlignment="Center" Margin="8,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate>
+                                <ComboBox ItemsSource="{Binding DataContext.RoomTypeOptions, ElementName=Root}"
+                                          SelectedValuePath="Id" DisplayMemberPath="Name"
+                                          SelectedValue="{Binding RequiredRoomTypeId, UpdateSourceTrigger=PropertyChanged}"
+                                          IsEditable="False" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="" Width="60">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource MaterialDesignIconButton}"
+                                        Command="{Binding DataContext.DeleteCommand, ElementName=Root}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="Удалить предмет">
+                                    <materialDesign:PackIcon Kind="Delete" />
+                                </Button>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </materialDesign:Card>
+    </Grid>
+</UserControl>

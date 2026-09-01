@@ -1,0 +1,141 @@
+<UserControl x:Class="SchoolSchedule.App.Views.RoomsPage"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             mc:Ignorable="d"
+             Loaded="RoomsPage_OnLoaded"
+             d:DesignHeight="650" d:DesignWidth="1100">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="Кабинеты" Style="{StaticResource PageTitleStyle}" />
+            <Button DockPanel.Dock="Right" HorizontalAlignment="Right"
+                    Style="{StaticResource AppRaisedButton}"
+                    Command="{Binding AddCommand}">
+                <StackPanel Orientation="Horizontal">
+                    <materialDesign:PackIcon Kind="Plus" Margin="0,0,8,0" />
+                    <TextBlock Text="Добавить кабинет" />
+                </StackPanel>
+            </Button>
+            <Button x:Name="RoomTypesButton" DockPanel.Dock="Right" HorizontalAlignment="Right" Margin="0,0,12,0"
+                    Style="{StaticResource AppOutlinedButton}"
+                    Command="{Binding ToggleRoomTypesPopupCommand}">
+                <StackPanel Orientation="Horizontal">
+                    <materialDesign:PackIcon Kind="FormatListBulletedType" Margin="0,0,8,0" />
+                    <TextBlock Text="Типы кабинетов" />
+                </StackPanel>
+            </Button>
+        </DockPanel>
+
+        <Popup PlacementTarget="{Binding ElementName=RoomTypesButton}" Placement="Bottom"
+               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+               IsOpen="{Binding IsRoomTypesPopupOpen}">
+            <materialDesign:Card Padding="16" MinWidth="300" materialDesign:ElevationAssist.Elevation="Dp8">
+                <StackPanel>
+                    <TextBlock Text="Типы кабинетов" Style="{StaticResource SectionLabelStyle}" />
+                    <ItemsControl ItemsSource="{Binding AllRoomTypes}" MaxHeight="240">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,3">
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconButton}"
+                                            Width="28" Height="28"
+                                            Command="{Binding DataContext.DeleteRoomTypeCommand, ElementName=Root}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="Удалить тип">
+                                        <materialDesign:PackIcon Kind="Close" Width="16" Height="16" />
+                                    </Button>
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <DockPanel Margin="0,12,0,0">
+                        <Button DockPanel.Dock="Right" Content="Добавить" Margin="8,0,0,0"
+                                Style="{StaticResource AppFlatButton}"
+                                Command="{Binding AddRoomTypeCommand}" />
+                        <TextBox materialDesign:HintAssist.Hint="Новый тип кабинета"
+                                 Text="{Binding NewRoomTypeName, UpdateSourceTrigger=PropertyChanged}" />
+                    </DockPanel>
+                </StackPanel>
+            </materialDesign:Card>
+        </Popup>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.7*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="1*" MinWidth="280" />
+            </Grid.ColumnDefinitions>
+
+            <materialDesign:Card Grid.Column="0" Padding="0">
+                <DataGrid ItemsSource="{Binding Rooms}"
+                          SelectedItem="{Binding SelectedRoom}"
+                          AutoGenerateColumns="False"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          RowEditEnding="DataGrid_OnRowEditEnding">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Название" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="1.6*" />
+                        <DataGridTextColumn Header="Вместимость" Binding="{Binding Capacity, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                        <DataGridTemplateColumn Header="Тип кабинета" Width="1.6*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding RoomType.Name}" VerticalAlignment="Center" Margin="8,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate>
+                                    <ComboBox ItemsSource="{Binding DataContext.AllRoomTypes, ElementName=Root}"
+                                              SelectedValuePath="Id" DisplayMemberPath="Name"
+                                              SelectedValue="{Binding RoomTypeId, UpdateSourceTrigger=PropertyChanged}"
+                                              IsEditable="False" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="" Width="60">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource MaterialDesignIconButton}"
+                                            Command="{Binding DataContext.DeleteCommand, ElementName=Root}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="Удалить кабинет">
+                                        <materialDesign:PackIcon Kind="Delete" />
+                                    </Button>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </materialDesign:Card>
+
+            <materialDesign:Card Grid.Column="2" Padding="20">
+                <StackPanel>
+                    <TextBlock Text="Выберите кабинет слева" Opacity="0.6"
+                               Visibility="{Binding SelectedRoom, Converter={StaticResource NullToInverseVisibilityConverter}, FallbackValue=Visible}" />
+
+                    <StackPanel Visibility="{Binding SelectedRoom, Converter={StaticResource NullToVisibilityConverter}, FallbackValue=Collapsed}">
+                        <TextBlock Text="{Binding SelectedRoom.Name}" FontSize="19" FontWeight="SemiBold" Margin="0,0,0,20" />
+
+                        <TextBlock Text="Закреплён за учителями" Style="{StaticResource SectionLabelStyle}" />
+                        <TextBlock Text="Если кабинет ни за кем не закреплён — им может пользоваться любой учитель по расписанию."
+                                   TextWrapping="Wrap" Opacity="0.6" FontSize="12.5" Margin="0,0,0,10" />
+                        <ItemsControl ItemsSource="{Binding TeacherSelections}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,3" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+            </materialDesign:Card>
+        </Grid>
+    </Grid>
+</UserControl>
