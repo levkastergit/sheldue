@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
              xmlns:converters="clr-namespace:SchoolSchedule.App.Converters"
+             xmlns:helpers="clr-namespace:SchoolSchedule.App.Helpers"
              xmlns:local="clr-namespace:SchoolSchedule.App">
     <Application.Resources>
         <ResourceDictionary>
@@ -17,6 +18,7 @@
 
             <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
             <converters:NullToInverseVisibilityConverter x:Key="NullToInverseVisibilityConverter" />
+            <helpers:NullToRoomTypeSentinelConverter x:Key="NullToRoomTypeSentinelConverter" />
 
             <!-- Единый вид заголовка раздела на каждой странице -->
             <Style x:Key="PageTitleStyle" TargetType="TextBlock">

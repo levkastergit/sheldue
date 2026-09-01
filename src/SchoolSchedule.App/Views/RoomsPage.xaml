@@ -92,9 +92,10 @@
                             </DataGridTemplateColumn.CellTemplate>
                             <DataGridTemplateColumn.CellEditingTemplate>
                                 <DataTemplate>
-                                    <ComboBox ItemsSource="{Binding DataContext.AllRoomTypes, ElementName=Root}"
-                                              SelectedValuePath="Id" DisplayMemberPath="Name"
-                                              SelectedValue="{Binding RoomTypeId, UpdateSourceTrigger=PropertyChanged}"
+                                    <ComboBox Style="{StaticResource MaterialDesignComboBox}"
+                                              ItemsSource="{Binding DataContext.AllRoomTypes, ElementName=Root}"
+                                              DisplayMemberPath="Name"
+                                              SelectedItem="{Binding RoomType, UpdateSourceTrigger=PropertyChanged}"
                                               IsEditable="False" />
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellEditingTemplate>

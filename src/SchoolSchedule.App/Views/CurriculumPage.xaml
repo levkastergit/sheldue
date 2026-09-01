@@ -50,9 +50,10 @@
                         </DataGridTemplateColumn.CellTemplate>
                         <DataGridTemplateColumn.CellEditingTemplate>
                             <DataTemplate>
-                                <ComboBox ItemsSource="{Binding DataContext.AllSubjects, ElementName=Root}"
-                                          SelectedValuePath="Id" DisplayMemberPath="Name"
-                                          SelectedValue="{Binding SubjectId, UpdateSourceTrigger=PropertyChanged}"
+                                <ComboBox Style="{StaticResource MaterialDesignComboBox}"
+                                          ItemsSource="{Binding DataContext.AllSubjects, ElementName=Root}"
+                                          DisplayMemberPath="Name"
+                                          SelectedItem="{Binding Subject, UpdateSourceTrigger=PropertyChanged}"
                                           IsEditable="False" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellEditingTemplate>

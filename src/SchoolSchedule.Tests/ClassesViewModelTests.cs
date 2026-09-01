@@ -113,12 +113,15 @@ public class ClassesViewModelTests
 
         var schoolClass = vm.Classes[0];
         var room = vm.AllRooms[0];
-        schoolClass.HomeRoomId = room.Id;
+        // Комбобокс в гриде биндится на HomeRoom (SelectedItem) напрямую, а не на HomeRoomId.
+        schoolClass.HomeRoom = room;
 
         vm.SaveClassCommand.Execute(schoolClass);
         Assert.Equal(room.Name, schoolClass.HomeRoom?.Name);
 
         if (vm.SaveClassCommand is IAsyncRelayCommand { ExecutionTask: { } task })
             await task;
+
+        Assert.Equal(room.Id, schoolClass.HomeRoomId);
     }
 }

@@ -155,12 +155,15 @@ public class CurriculumViewModelTests
 
         var group = vm.Groups[0];
         var newSubject = vm.AllSubjects.First(s => s.Id != group.SubjectId);
-        group.SubjectId = newSubject.Id;
+        // Комбобокс в гриде биндится на Subject (SelectedItem) напрямую, а не на SubjectId.
+        group.Subject = newSubject;
 
         vm.SaveGroupCommand.Execute(group);
         Assert.Equal(newSubject.Name, group.Subject?.Name);
 
         if (vm.SaveGroupCommand is IAsyncRelayCommand { ExecutionTask: { } task })
             await task;
+
+        Assert.Equal(newSubject.Id, group.SubjectId);
     }
 }

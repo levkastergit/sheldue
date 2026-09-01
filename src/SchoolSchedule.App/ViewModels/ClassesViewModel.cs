@@ -76,13 +76,8 @@ public partial class ClassesViewModel : ObservableObject
         // (иначе "10А" оказался бы раньше "5А").
         schoolClass.Grade = ParseGrade(schoolClass.Name);
 
-        // Синхронно, до await — та же гонка навигационного свойства, что и в RoomsViewModel:
-        // смена HomeRoomId сама по себе не обновляет HomeRoom, а ячейка "Классный кабинет" читает
-        // именно его.
-        schoolClass.HomeRoom = schoolClass.HomeRoomId is null
-            ? null
-            : AllRooms.FirstOrDefault(r => r.Id == schoolClass.HomeRoomId);
-
+        // Комбобокс биндится на HomeRoom (SelectedItem) напрямую, а не на HomeRoomId (SelectedValue) —
+        // см. комментарий в RoomsViewModel.SaveRoomAsync про то, почему это надёжнее.
         await TrySaveAsync("сохранить класс");
     }
 

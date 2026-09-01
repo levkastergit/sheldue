@@ -104,9 +104,8 @@ public partial class CurriculumViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveGroupAsync(ClassSubjectGroup group)
     {
-        // Синхронно, до await — та же гонка навигационного свойства, что и в RoomsViewModel:
-        // смена SubjectId сама по себе не обновляет Subject, а ячейка "Предмет" читает именно его.
-        group.Subject = AllSubjects.FirstOrDefault(s => s.Id == group.SubjectId) ?? group.Subject;
+        // Комбобокс биндится на Subject (SelectedItem) напрямую, а не на SubjectId (SelectedValue) —
+        // см. комментарий в RoomsViewModel.SaveRoomAsync про то, почему это надёжнее.
         await TrySaveAsync("сохранить учебный план");
     }
 

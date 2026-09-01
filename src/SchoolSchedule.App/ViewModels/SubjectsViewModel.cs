@@ -36,7 +36,7 @@ public partial class SubjectsViewModel : ObservableObject
         _context = await _contextFactory.CreateDbContextAsync();
 
         RoomTypeOptions.Clear();
-        RoomTypeOptions.Add(new RoomType { Id = 0, Name = "Не важно" });
+        RoomTypeOptions.Add(NullToRoomTypeSentinelConverter.Sentinel);
         foreach (var roomType in await _context.RoomTypes.OrderBy(rt => rt.Name).ToListAsync())
             RoomTypeOptions.Add(roomType);
 
@@ -66,16 +66,10 @@ public partial class SubjectsViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveSubjectAsync(Subject subject)
     {
-        // Id=0 — синтетическая запись "Не важно" в комбобоксе, реальному типу кабинета она не соответствует.
-        if (subject.RequiredRoomTypeId == 0)
-            subject.RequiredRoomTypeId = null;
-
-        // Синхронно, до await — та же гонка навигационного свойства, что и в RoomsViewModel: смена
-        // RequiredRoomTypeId сама по себе не обновляет RequiredRoomType, а ячейка читает именно его.
-        subject.RequiredRoomType = subject.RequiredRoomTypeId is null
-            ? null
-            : RoomTypeOptions.FirstOrDefault(rt => rt.Id == subject.RequiredRoomTypeId);
-
+        // Комбобокс биндится на RequiredRoomType (SelectedItem) напрямую, а не на RequiredRoomTypeId
+        // (SelectedValue) — см. комментарий в RoomsViewModel.SaveRoomAsync. Синтетическая запись
+        // "Не важно" превращается обратно в null конвертером NullToRoomTypeSentinelConverter ещё на
+        // этапе биндинга, так что здесь уже гарантированно корректное значение.
         await TrySaveAsync("сохранить предмет");
     }
 

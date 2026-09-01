@@ -48,9 +48,10 @@
                         </DataGridTemplateColumn.CellTemplate>
                         <DataGridTemplateColumn.CellEditingTemplate>
                             <DataTemplate>
-                                <ComboBox ItemsSource="{Binding DataContext.AllRooms, ElementName=Root}"
-                                          SelectedValuePath="Id" DisplayMemberPath="Name"
-                                          SelectedValue="{Binding HomeRoomId, UpdateSourceTrigger=PropertyChanged}"
+                                <ComboBox Style="{StaticResource MaterialDesignComboBox}"
+                                          ItemsSource="{Binding DataContext.AllRooms, ElementName=Root}"
+                                          DisplayMemberPath="Name"
+                                          SelectedItem="{Binding HomeRoom, UpdateSourceTrigger=PropertyChanged}"
                                           IsEditable="False" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellEditingTemplate>
