@@ -1,3 +1,4 @@
+using SchoolSchedule.App.Helpers;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -90,7 +91,7 @@ public partial class AssignmentsViewModel : ObservableObject
         }
         catch (DbUpdateException ex)
         {
-            _snackbar.Show($"Не удалось сохранить назначение: {ex.InnerException?.Message ?? ex.Message}");
+            _snackbar.Show(DbErrorFormatter.Format("сохранить назначение", ex));
         }
     }
 }

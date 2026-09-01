@@ -1,3 +1,4 @@
+using SchoolSchedule.App.Helpers;
 using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -110,7 +111,7 @@ public partial class ClassesViewModel : ObservableObject
         }
         catch (DbUpdateException ex)
         {
-            _snackbar.Show($"Не удалось {actionDescription}: {ex.InnerException?.Message ?? ex.Message}");
+            _snackbar.Show(DbErrorFormatter.Format(actionDescription, ex));
             return false;
         }
     }

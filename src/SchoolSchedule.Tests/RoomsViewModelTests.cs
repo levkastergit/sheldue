@@ -80,7 +80,7 @@ public class RoomsViewModelTests
 
         Assert.Single(vm.Rooms); // второй кабинет не добавился в коллекцию
         Assert.Single(snackbar.Messages);
-        Assert.Contains("добавить кабинет", snackbar.Messages[0]);
+        Assert.Contains("уже используется", snackbar.Messages[0]);
     }
 
     [Fact]

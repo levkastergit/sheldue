@@ -38,12 +38,11 @@ public partial class App : Application
             base.OnStartup(e);
             StartupLogger.Log("Базовая инициализация WPF пройдена");
 
-            var appDataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "SchoolSchedule");
-            Directory.CreateDirectory(appDataDir);
-            var dbPath = Path.Combine(appDataDir, "school.db");
+            // База хранится прямо в папке приложения (рядом с .exe) — не в %LocalAppData%,
+            // чтобы всё приложение оставалось переносимым: скопировал папку — перенёс и данные.
+            var dbPath = Path.Combine(AppContext.BaseDirectory, "school.db");
             StartupLogger.Log($"Путь к базе данных: {dbPath}");
+            MigrateLegacyDatabaseIfPresent(dbPath);
 
             _host = Host.CreateDefaultBuilder()
                 .ConfigureServices((_, services) =>
@@ -90,6 +89,39 @@ public partial class App : Application
         {
             StartupLogger.LogException("OnStartup", ex);
             ShowFatalErrorAndShutdown(ex);
+        }
+    }
+
+    /// <summary>
+    /// Версии до этой хранили базу в %LocalAppData%\SchoolSchedule\school.db. Если она там есть,
+    /// а в новом расположении (папка приложения) — ещё нет, переносим её один раз, чтобы уже
+    /// введённые данные не терялись при обновлении на эту версию.
+    /// </summary>
+    private static void MigrateLegacyDatabaseIfPresent(string newDbPath)
+    {
+        if (File.Exists(newDbPath)) return;
+
+        try
+        {
+            var legacyDbPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "SchoolSchedule", "school.db");
+            if (!File.Exists(legacyDbPath)) return;
+
+            StartupLogger.Log($"Найдена база в старом расположении (%LocalAppData%) — переношу в папку приложения: {legacyDbPath} -> {newDbPath}");
+            foreach (var suffix in new[] { "", "-shm", "-wal" })
+            {
+                var source = legacyDbPath + suffix;
+                if (File.Exists(source))
+                    File.Copy(source, newDbPath + suffix);
+            }
+            StartupLogger.Log("Перенос базы из старого расположения выполнен успешно");
+        }
+        catch (Exception ex)
+        {
+            StartupLogger.LogException(
+                "Перенос базы из %LocalAppData% не удался — не критично, продолжаю с новой пустой базой в папке приложения",
+                ex);
         }
     }
 
