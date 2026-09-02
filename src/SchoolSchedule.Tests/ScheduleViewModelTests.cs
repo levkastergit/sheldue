@@ -87,7 +87,7 @@ public class ScheduleViewModelTests
         Assert.Contains(vm.GridRows, row => row.Days.Any(d => d.SubjectName is not null));
 
         // Те же уроки должны быть видны и в виде "по учителям".
-        vm.ViewByTeacher = true;
+        vm.ViewMode = ScheduleViewMode.ByTeacher;
         vm.SelectedTeacherForView = vm.AllTeachers.Single(t => t.Id == teacherId);
         var cells = vm.GridRows.SelectMany(row => row.Days).Where(d => d.SubjectName is not null).ToList();
         Assert.Equal(3, cells.Count);
@@ -97,6 +97,61 @@ public class ScheduleViewModelTests
             Assert.Equal("5А", c.SecondaryLine);
             Assert.Equal("101", c.RoomName);
         });
+
+        // И в общем расписании (все классы сразу) — тот же урок в столбце "5А".
+        vm.ViewMode = ScheduleViewMode.Overview;
+        var overviewCells = vm.OverviewRows.SelectMany(row => row.ClassCells).Where(c => c.SubjectName is not null).ToList();
+        Assert.Equal(3, overviewCells.Count);
+        Assert.All(overviewCells, c =>
+        {
+            Assert.Equal("Математика", c.SubjectName);
+            Assert.Equal("Иванова И.И.", c.SecondaryLine);
+            Assert.Equal("101", c.RoomName);
+        });
+    }
+
+    [Fact]
+    public async Task Overview_grid_places_each_classs_lessons_in_that_classs_own_column()
+    {
+        using var factory = new SqliteTestContextFactory();
+        int classAId, classBId;
+        await using (var context = factory.CreateDbContext())
+        {
+            var room = new Room { Name = "101", Capacity = 25, RoomTypeId = 1 };
+            var classA = new SchoolClass { Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+            var classB = new SchoolClass { Name = "5Б", Grade = 5, Shift = Shift.Первая, StudentCount = 24 };
+            var math = new Subject { Name = "Математика" };
+            var teacherA = new Teacher { FullName = "Иванова И.И." };
+            var teacherB = new Teacher { FullName = "Петрова П.П." };
+            context.AddRange(room, classA, classB, math, teacherA, teacherB);
+            await context.SaveChangesAsync();
+
+            context.ClassSubjectGroups.AddRange(
+                new ClassSubjectGroup { ClassId = classA.Id, SubjectId = math.Id, TeacherId = teacherA.Id, LessonsPerWeek = 2 },
+                new ClassSubjectGroup { ClassId = classB.Id, SubjectId = math.Id, TeacherId = teacherB.Id, LessonsPerWeek = 2 });
+            await context.SaveChangesAsync();
+            classAId = classA.Id;
+            classBId = classB.Id;
+        }
+
+        var vm = new ScheduleViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+        await vm.GenerateCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedSchedule);
+
+        vm.ViewMode = ScheduleViewMode.Overview;
+
+        var classIndexA = vm.AllClasses.ToList().FindIndex(c => c.Id == classAId);
+        var classIndexB = vm.AllClasses.ToList().FindIndex(c => c.Id == classBId);
+        Assert.NotEqual(classIndexA, classIndexB);
+
+        var columnA = vm.OverviewRows.Select(r => r.ClassCells[classIndexA]).Where(c => c.SubjectName is not null).ToList();
+        var columnB = vm.OverviewRows.Select(r => r.ClassCells[classIndexB]).Where(c => c.SubjectName is not null).ToList();
+
+        Assert.Equal(2, columnA.Count);
+        Assert.Equal(2, columnB.Count);
+        Assert.All(columnA, c => Assert.Equal("Иванова И.И.", c.SecondaryLine));
+        Assert.All(columnB, c => Assert.Equal("Петрова П.П.", c.SecondaryLine));
     }
 
     [Fact]

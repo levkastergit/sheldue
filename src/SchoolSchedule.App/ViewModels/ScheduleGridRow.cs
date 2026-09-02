@@ -18,3 +18,28 @@ public class ScheduleGridRow(string periodLabel)
 
     public List<ScheduleCell> Days { get; } = [];
 }
+
+/// <summary>
+/// Одна строка общего расписания (вид "Общее") — конкретные день+смена+урок, с ячейкой на
+/// каждый класс (в отличие от ScheduleGridRow, где по дням — здесь по классам, а день+урок уже
+/// зафиксированы в самой строке).
+/// </summary>
+public class OverviewGridRow(string rowLabel)
+{
+    public string RowLabel { get; } = rowLabel;
+
+    public List<ScheduleCell> ClassCells { get; } = [];
+}
+
+/// <summary>Какой срез недельного расписания сейчас отображается на вкладке.</summary>
+public enum ScheduleViewMode
+{
+    /// <summary>Один класс — дни по горизонтали, уроки по вертикали.</summary>
+    ByClass,
+
+    /// <summary>Один учитель — дни по горизонтали, уроки по вертикали.</summary>
+    ByTeacher,
+
+    /// <summary>Все классы сразу — классы по горизонтали, день+урок по вертикали.</summary>
+    Overview,
+}

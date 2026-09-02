@@ -21,6 +21,7 @@
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
             <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
             <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
+            <converters:EnumToBooleanConverter x:Key="EnumToBooleanConverter" />
             <helpers:NullToRoomTypeSentinelConverter x:Key="NullToRoomTypeSentinelConverter" />
 
             <!-- Единый вид заголовка раздела на каждой странице -->

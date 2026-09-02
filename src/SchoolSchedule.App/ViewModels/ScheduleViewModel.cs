@@ -12,7 +12,8 @@ namespace SchoolSchedule.App.ViewModels;
 
 /// <summary>
 /// Расписание: настройки сетки (дни/уроки в смену), запуск генерации (CP-SAT, см.
-/// SchoolSchedule.Scheduling.ScheduleSolver) и просмотр результата — по классам или по учителям.
+/// SchoolSchedule.Scheduling.ScheduleSolver) и просмотр результата — по классам, по учителям или
+/// общей сеткой (все классы сразу).
 /// </summary>
 public partial class ScheduleViewModel : ObservableObject
 {
@@ -27,6 +28,7 @@ public partial class ScheduleViewModel : ObservableObject
     public ObservableCollection<SchoolClass> AllClasses { get; } = [];
     public ObservableCollection<Teacher> AllTeachers { get; } = [];
     public ObservableCollection<ScheduleGridRow> GridRows { get; } = [];
+    public ObservableCollection<OverviewGridRow> OverviewRows { get; } = [];
     public ObservableCollection<string> Warnings { get; } = [];
 
     [ObservableProperty]
@@ -44,9 +46,12 @@ public partial class ScheduleViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasSecondShift;
 
-    /// <summary>false — вид "по классам", true — "по учителям".</summary>
     [ObservableProperty]
-    private bool _viewByTeacher;
+    private ScheduleViewMode _viewMode = ScheduleViewMode.ByClass;
+
+    public bool IsByClassView => ViewMode == ScheduleViewMode.ByClass;
+    public bool IsByTeacherView => ViewMode == ScheduleViewMode.ByTeacher;
+    public bool IsOverviewView => ViewMode == ScheduleViewMode.Overview;
 
     [ObservableProperty]
     private SchoolClass? _selectedClassForView;
@@ -131,7 +136,14 @@ public partial class ScheduleViewModel : ObservableObject
         RebuildGrid();
     }
 
-    partial void OnViewByTeacherChanged(bool value) => RebuildGrid();
+    partial void OnViewModeChanged(ScheduleViewMode value)
+    {
+        OnPropertyChanged(nameof(IsByClassView));
+        OnPropertyChanged(nameof(IsByTeacherView));
+        OnPropertyChanged(nameof(IsOverviewView));
+        RebuildGrid();
+    }
+
     partial void OnSelectedClassForViewChanged(SchoolClass? value) => RebuildGrid();
     partial void OnSelectedTeacherForViewChanged(Teacher? value) => RebuildGrid();
 
@@ -250,60 +262,104 @@ public partial class ScheduleViewModel : ObservableObject
     private void RebuildGrid()
     {
         GridRows.Clear();
+        OverviewRows.Clear();
         if (_settings.DaysPerWeek <= 0) return;
 
-        var days = Enumerable.Range(1, _settings.DaysPerWeek).Select(d => (SchoolDay)d).ToList();
-
-        if (!ViewByTeacher)
+        switch (ViewMode)
         {
-            var cls = SelectedClassForView;
-            if (cls is null) return;
-
-            var shiftSlots = _timeSlots.Where(t => t.Shift == cls.Shift).ToList();
-            var periods = shiftSlots.Select(t => t.PeriodNumber).Distinct().OrderBy(p => p).ToList();
-            var classLessons = _lessons.Where(l => l.ClassSubjectGroup.ClassId == cls.Id).ToList();
-
-            foreach (var period in periods)
-            {
-                var row = new ScheduleGridRow($"{period} урок");
-                foreach (var day in days)
-                {
-                    var slot = shiftSlots.FirstOrDefault(t => t.PeriodNumber == period && t.Day == day);
-                    var lesson = slot is null ? null : classLessons.FirstOrDefault(l => l.TimeSlotId == slot.Id);
-                    row.Days.Add(BuildCell(lesson, showClass: false));
-                }
-                GridRows.Add(row);
-            }
+            case ScheduleViewMode.ByClass:
+                RebuildByClassGrid();
+                break;
+            case ScheduleViewMode.ByTeacher:
+                RebuildByTeacherGrid();
+                break;
+            case ScheduleViewMode.Overview:
+                RebuildOverviewGrid();
+                break;
         }
-        else
+    }
+
+    private void RebuildByClassGrid()
+    {
+        var cls = SelectedClassForView;
+        if (cls is null) return;
+
+        var days = Enumerable.Range(1, _settings.DaysPerWeek).Select(d => (SchoolDay)d).ToList();
+        var shiftSlots = _timeSlots.Where(t => t.Shift == cls.Shift).ToList();
+        var periods = shiftSlots.Select(t => t.PeriodNumber).Distinct().OrderBy(p => p).ToList();
+        var classLessons = _lessons.Where(l => l.ClassSubjectGroup.ClassId == cls.Id).ToList();
+
+        foreach (var period in periods)
         {
-            var teacher = SelectedTeacherForView;
-            if (teacher is null) return;
-
-            var teacherLessons = _lessons.Where(l => l.TeacherId == teacher.Id).ToList();
-            var relevantShifts = teacherLessons.Select(l => l.TimeSlot.Shift).Distinct().ToList();
-            if (relevantShifts.Count == 0)
-                relevantShifts = [Shift.Первая];
-
-            var shiftSlots = _timeSlots.Where(t => relevantShifts.Contains(t.Shift)).ToList();
-            var rows = shiftSlots
-                .Select(t => (t.Shift, t.PeriodNumber))
-                .Distinct()
-                .OrderBy(r => r.Shift).ThenBy(r => r.PeriodNumber)
-                .ToList();
-
-            foreach (var (shift, period) in rows)
+            var row = new ScheduleGridRow($"{period} урок");
+            foreach (var day in days)
             {
-                var label = relevantShifts.Count > 1 ? $"{period} ур. ({shift})" : $"{period} урок";
-                var row = new ScheduleGridRow(label);
-                foreach (var day in days)
-                {
-                    var slot = shiftSlots.FirstOrDefault(t => t.Shift == shift && t.PeriodNumber == period && t.Day == day);
-                    var lesson = slot is null ? null : teacherLessons.FirstOrDefault(l => l.TimeSlotId == slot.Id);
-                    row.Days.Add(BuildCell(lesson, showClass: true));
-                }
-                GridRows.Add(row);
+                var slot = shiftSlots.FirstOrDefault(t => t.PeriodNumber == period && t.Day == day);
+                var lesson = slot is null ? null : classLessons.FirstOrDefault(l => l.TimeSlotId == slot.Id);
+                row.Days.Add(BuildCell(lesson, showClass: false));
             }
+            GridRows.Add(row);
+        }
+    }
+
+    private void RebuildByTeacherGrid()
+    {
+        var teacher = SelectedTeacherForView;
+        if (teacher is null) return;
+
+        var days = Enumerable.Range(1, _settings.DaysPerWeek).Select(d => (SchoolDay)d).ToList();
+        var teacherLessons = _lessons.Where(l => l.TeacherId == teacher.Id).ToList();
+        var relevantShifts = teacherLessons.Select(l => l.TimeSlot.Shift).Distinct().ToList();
+        if (relevantShifts.Count == 0)
+            relevantShifts = [Shift.Первая];
+
+        var shiftSlots = _timeSlots.Where(t => relevantShifts.Contains(t.Shift)).ToList();
+        var rows = shiftSlots
+            .Select(t => (t.Shift, t.PeriodNumber))
+            .Distinct()
+            .OrderBy(r => r.Shift).ThenBy(r => r.PeriodNumber)
+            .ToList();
+
+        foreach (var (shift, period) in rows)
+        {
+            var label = relevantShifts.Count > 1 ? $"{period} ур. ({shift})" : $"{period} урок";
+            var row = new ScheduleGridRow(label);
+            foreach (var day in days)
+            {
+                var slot = shiftSlots.FirstOrDefault(t => t.Shift == shift && t.PeriodNumber == period && t.Day == day);
+                var lesson = slot is null ? null : teacherLessons.FirstOrDefault(l => l.TimeSlotId == slot.Id);
+                row.Days.Add(BuildCell(lesson, showClass: true));
+            }
+            GridRows.Add(row);
+        }
+    }
+
+    /// <summary>Общее расписание — все классы сразу: строка = конкретные день+смена+урок,
+    /// столбец = класс.</summary>
+    private void RebuildOverviewGrid()
+    {
+        if (AllClasses.Count == 0) return;
+
+        var rows = _timeSlots
+            .Select(t => (t.Day, t.Shift, t.PeriodNumber))
+            .Distinct()
+            .OrderBy(r => r.Day).ThenBy(r => r.Shift).ThenBy(r => r.PeriodNumber)
+            .ToList();
+        var showShift = _timeSlots.Select(t => t.Shift).Distinct().Count() > 1;
+
+        foreach (var (day, shift, period) in rows)
+        {
+            var dayName = DayShortNames[(int)day - 1];
+            var label = showShift ? $"{dayName}, {period} ({shift})" : $"{dayName}, {period}";
+            var row = new OverviewGridRow(label);
+
+            var slot = _timeSlots.FirstOrDefault(t => t.Day == day && t.Shift == shift && t.PeriodNumber == period);
+            foreach (var cls in AllClasses)
+            {
+                var lesson = slot is null ? null : _lessons.FirstOrDefault(l => l.TimeSlotId == slot.Id && l.ClassSubjectGroup.ClassId == cls.Id);
+                row.ClassCells.Add(BuildCell(lesson, showClass: false));
+            }
+            OverviewRows.Add(row);
         }
     }
 

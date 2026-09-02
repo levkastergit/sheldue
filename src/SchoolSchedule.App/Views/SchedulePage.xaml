@@ -105,16 +105,18 @@
         <DockPanel Grid.Row="3" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                 <RadioButton Content="По классам" GroupName="ScheduleView" Margin="0,0,20,0" VerticalAlignment="Center"
-                             IsChecked="{Binding ViewByTeacher, Converter={StaticResource InverseBoolConverter}}" />
+                             IsChecked="{Binding ViewMode, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=ByClass}" />
                 <RadioButton Content="По учителям" GroupName="ScheduleView" Margin="0,0,20,0" VerticalAlignment="Center"
-                             IsChecked="{Binding ViewByTeacher}" />
+                             IsChecked="{Binding ViewMode, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=ByTeacher}" />
+                <RadioButton Content="Общее (все классы)" GroupName="ScheduleView" Margin="0,0,20,0" VerticalAlignment="Center"
+                             IsChecked="{Binding ViewMode, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Overview}" />
 
                 <ComboBox Width="220"
-                          Visibility="{Binding ViewByTeacher, Converter={StaticResource InverseBoolToVisibilityConverter}}"
+                          Visibility="{Binding IsByClassView, Converter={StaticResource BoolToVisibilityConverter}}"
                           ItemsSource="{Binding AllClasses}" DisplayMemberPath="Name"
                           SelectedItem="{Binding SelectedClassForView}" />
                 <ComboBox Width="260"
-                          Visibility="{Binding ViewByTeacher, Converter={StaticResource BoolToVisibilityConverter}}"
+                          Visibility="{Binding IsByTeacherView, Converter={StaticResource BoolToVisibilityConverter}}"
                           ItemsSource="{Binding AllTeachers}" DisplayMemberPath="FullName"
                           SelectedItem="{Binding SelectedTeacherForView}" />
             </StackPanel>
@@ -133,7 +135,21 @@
                            TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center"
                            Visibility="{Binding HasGeneratedSchedule, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
 
-                <Grid Grid.Row="0" Visibility="{Binding HasGeneratedSchedule, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Grid Grid.Row="0">
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding HasGeneratedSchedule}" Value="True" />
+                                        <Condition Binding="{Binding IsOverviewView}" Value="False" />
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="90" />
                         <ColumnDefinition Width="*" />
@@ -155,8 +171,21 @@
                     </ItemsControl>
                 </Grid>
 
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                              Visibility="{Binding HasGeneratedSchedule, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer.Style>
+                        <Style TargetType="ScrollViewer">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding HasGeneratedSchedule}" Value="True" />
+                                        <Condition Binding="{Binding IsOverviewView}" Value="False" />
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ScrollViewer.Style>
                     <ItemsControl ItemsSource="{Binding GridRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -192,6 +221,86 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Общее расписание: строка = день+урок, столбец = класс. Ширина столбцов
+                     зафиксирована явно (а не поделена поровну через UniformGrid), иначе при
+                     горизонтальной прокрутке колонки шапки и строк могут разъехаться. -->
+                <ScrollViewer Grid.Row="0" Grid.RowSpan="2"
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer.Style>
+                        <Style TargetType="ScrollViewer">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding HasGeneratedSchedule}" Value="True" />
+                                        <Condition Binding="{Binding IsOverviewView}" Value="True" />
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ScrollViewer.Style>
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Style="{StaticResource ScheduleHeaderCellStyle}" />
+                            <ItemsControl Grid.Column="1" ItemsSource="{Binding AllClasses}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Width="150" Style="{StaticResource ScheduleHeaderCellStyle}">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" HorizontalAlignment="Center" TextWrapping="Wrap" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding OverviewRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="130" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Style="{StaticResource ScheduleCellStyle}" Background="{DynamicResource MaterialDesignBackground}">
+                                            <TextBlock Text="{Binding RowLabel}" VerticalAlignment="Center" FontWeight="Medium" TextWrapping="Wrap" />
+                                        </Border>
+                                        <ItemsControl Grid.Column="1" ItemsSource="{Binding ClassCells}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Horizontal" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Width="150" Style="{StaticResource ScheduleCellStyle}">
+                                                        <StackPanel Visibility="{Binding SubjectName, Converter={StaticResource NullToVisibilityConverter}}">
+                                                            <TextBlock Text="{Binding SubjectName}" FontWeight="SemiBold" FontSize="12" TextWrapping="Wrap" />
+                                                            <TextBlock Text="{Binding SecondaryLine}" FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,2,0,0" />
+                                                            <TextBlock FontSize="11" Opacity="0.6" Margin="0,2,0,0">
+                                                                <Run Text="Каб. " /><Run Text="{Binding RoomName, Mode=OneWay}" />
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </ScrollViewer>
             </Grid>
         </materialDesign:Card>
