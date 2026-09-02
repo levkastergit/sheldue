@@ -32,7 +32,38 @@
                     <TextBlock Text="Типы кабинетов" />
                 </StackPanel>
             </Button>
+            <Button x:Name="BulkAddButton" DockPanel.Dock="Right" HorizontalAlignment="Right" Margin="0,0,12,0"
+                    Style="{StaticResource AppOutlinedButton}"
+                    Command="{Binding ToggleBulkAddPopupCommand}">
+                <StackPanel Orientation="Horizontal">
+                    <materialDesign:PackIcon Kind="PlaylistPlus" Margin="0,0,8,0" />
+                    <TextBlock Text="Добавить серией" />
+                </StackPanel>
+            </Button>
         </DockPanel>
+
+        <Popup PlacementTarget="{Binding ElementName=BulkAddButton}" Placement="Bottom"
+               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+               IsOpen="{Binding IsBulkAddPopupOpen}">
+            <materialDesign:Card Padding="16" MinWidth="300" materialDesign:ElevationAssist.Elevation="Dp8">
+                <StackPanel>
+                    <TextBlock Text="Добавить кабинеты серией" Style="{StaticResource SectionLabelStyle}" />
+                    <TextBlock TextWrapping="Wrap" Opacity="0.6" FontSize="12.5" Margin="0,0,0,12"
+                               Text="Например, от 101 до 110 — сразу добавит 10 кабинетов с номерами 101, 102, …, 110 (тип «Обычный», вместимость 25 — можно поправить потом в таблице)." />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBox Width="90" Margin="0,0,10,0"
+                                 materialDesign:HintAssist.Hint="От"
+                                 Text="{Binding BulkAddFrom, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Width="90"
+                                 materialDesign:HintAssist.Hint="До"
+                                 Text="{Binding BulkAddTo, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <Button Content="Добавить" Margin="0,14,0,0" HorizontalAlignment="Left"
+                            Style="{StaticResource AppRaisedButton}"
+                            Command="{Binding BulkAddCommand}" />
+                </StackPanel>
+            </materialDesign:Card>
+        </Popup>
 
         <Popup PlacementTarget="{Binding ElementName=RoomTypesButton}" Placement="Bottom"
                StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"

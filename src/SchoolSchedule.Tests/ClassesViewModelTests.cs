@@ -124,4 +124,21 @@ public class ClassesViewModelTests
 
         Assert.Equal(room.Id, schoolClass.HomeRoomId);
     }
+
+    [Fact]
+    public async Task Adding_repeatedly_gives_each_class_a_different_default_name()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var snackbar = new FakeSnackbarService();
+        var vm = new ClassesViewModel(factory, snackbar);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        await vm.AddCommand.ExecuteAsync(null);
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Empty(snackbar.Messages);
+        Assert.Equal(2, vm.Classes.Count);
+        Assert.Contains(vm.Classes, c => c.Name == "Новый класс");
+        Assert.Contains(vm.Classes, c => c.Name == "Новый класс 2");
+    }
 }

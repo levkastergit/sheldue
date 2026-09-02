@@ -70,4 +70,21 @@ public class SubjectsViewModelTests
 
         Assert.Equal(sportsHall.Id, subject.RequiredRoomTypeId);
     }
+
+    [Fact]
+    public async Task Adding_repeatedly_gives_each_subject_a_different_default_name()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var snackbar = new FakeSnackbarService();
+        var vm = new SubjectsViewModel(factory, snackbar);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        await vm.AddCommand.ExecuteAsync(null);
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Empty(snackbar.Messages);
+        Assert.Equal(2, vm.Subjects.Count);
+        Assert.Contains(vm.Subjects, s => s.Name == "Новый предмет");
+        Assert.Contains(vm.Subjects, s => s.Name == "Новый предмет 2");
+    }
 }

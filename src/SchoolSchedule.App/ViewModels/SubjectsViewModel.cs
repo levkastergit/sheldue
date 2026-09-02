@@ -50,7 +50,10 @@ public partial class SubjectsViewModel : ObservableObject
     {
         if (_context is null) return;
 
-        var subject = new Subject { Name = "Новый предмет" };
+        // Имя уникально в базе — иначе повторное добавление сразу падало бы на дубликате, не давая
+        // добавить второй предмет, пока не переименуешь первый.
+        var name = UniqueNameHelper.NextAvailable("Новый предмет", Subjects.Select(s => s.Name));
+        var subject = new Subject { Name = name };
         _context.Subjects.Add(subject);
         if (await TrySaveAsync("добавить предмет"))
         {

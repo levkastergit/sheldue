@@ -84,17 +84,44 @@ public class RoomsViewModelTests
     }
 
     [Fact]
-    public async Task Duplicate_name_is_rejected_and_reported_via_snackbar()
+    public async Task Adding_repeatedly_gives_each_room_a_different_default_name()
     {
+        // Регрессия: раньше "Добавить" всегда подставлял буквально "Новый кабинет" — второе
+        // нажатие сразу падало на уникальном индексе, не давая добавить второй кабинет, пока не
+        // переименуешь первый вручную.
+        using var factory = new SqliteTestContextFactory();
+        var snackbar = new FakeSnackbarService();
+        var vm = new RoomsViewModel(factory, snackbar);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        await vm.AddCommand.ExecuteAsync(null);
+        await vm.AddCommand.ExecuteAsync(null);
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Empty(snackbar.Messages);
+        Assert.Equal(3, vm.Rooms.Count);
+        Assert.Equal(3, vm.Rooms.Select(r => r.Name).Distinct().Count());
+        Assert.Contains(vm.Rooms, r => r.Name == "Новый кабинет");
+        Assert.Contains(vm.Rooms, r => r.Name == "Новый кабинет 2");
+        Assert.Contains(vm.Rooms, r => r.Name == "Новый кабинет 3");
+    }
+
+    [Fact]
+    public async Task Renaming_to_an_existing_name_is_still_rejected_and_reported_via_snackbar()
+    {
+        // Автоподбор свободного имени касается только "Добавить" — если пользователь сам
+        // переименует кабинет в уже занятое имя, это по-прежнему должно быть отклонено.
         using var factory = new SqliteTestContextFactory();
         var snackbar = new FakeSnackbarService();
         var vm = new RoomsViewModel(factory, snackbar);
         await vm.LoadCommand.ExecuteAsync(null);
 
         await vm.AddCommand.ExecuteAsync(null); // "Новый кабинет"
-        await vm.AddCommand.ExecuteAsync(null); // тоже "Новый кабинет" -> нарушение уникального индекса
+        await vm.AddCommand.ExecuteAsync(null); // "Новый кабинет 2"
 
-        Assert.Single(vm.Rooms); // второй кабинет не добавился в коллекцию
+        vm.Rooms[1].Name = "Новый кабинет";
+        await vm.SaveRoomCommand.ExecuteAsync(vm.Rooms[1]);
+
         Assert.Single(snackbar.Messages);
         Assert.Contains("уже используется", snackbar.Messages[0]);
     }
@@ -176,5 +203,65 @@ public class RoomsViewModelTests
             await task;
 
         Assert.Equal(newType.Id, room.RoomTypeId);
+    }
+
+    [Fact]
+    public async Task Bulk_add_creates_a_room_for_every_number_in_the_range()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var vm = new RoomsViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        vm.BulkAddFrom = "101";
+        vm.BulkAddTo = "105";
+        await vm.BulkAddCommand.ExecuteAsync(null);
+
+        Assert.Equal(5, vm.Rooms.Count);
+        for (var n = 101; n <= 105; n++)
+            Assert.Contains(vm.Rooms, r => r.Name == n.ToString());
+        Assert.All(vm.Rooms, r => Assert.Equal("Обычный", r.RoomType.Name));
+        Assert.False(vm.IsBulkAddPopupOpen);
+
+        var vm2 = new RoomsViewModel(factory, new FakeSnackbarService());
+        await vm2.LoadCommand.ExecuteAsync(null);
+        Assert.Equal(5, vm2.Rooms.Count);
+    }
+
+    [Fact]
+    public async Task Bulk_add_accepts_the_range_reversed_and_skips_already_existing_numbers()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var snackbar = new FakeSnackbarService();
+        var vm = new RoomsViewModel(factory, snackbar);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        vm.BulkAddFrom = "3";
+        vm.BulkAddTo = "1";
+        await vm.BulkAddCommand.ExecuteAsync(null);
+        Assert.Equal(3, vm.Rooms.Count);
+
+        // Повторно с тем же диапазоном — все номера уже заняты, второй раз ничего не добавляется.
+        vm.BulkAddFrom = "1";
+        vm.BulkAddTo = "3";
+        await vm.BulkAddCommand.ExecuteAsync(null);
+
+        Assert.Equal(3, vm.Rooms.Count);
+        Assert.Contains(snackbar.Messages, m => m.Contains("уже существуют"));
+    }
+
+    [Fact]
+    public async Task Bulk_add_rejects_a_non_numeric_or_missing_range()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var snackbar = new FakeSnackbarService();
+        var vm = new RoomsViewModel(factory, snackbar);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        vm.BulkAddFrom = "101";
+        vm.BulkAddTo = "";
+        await vm.BulkAddCommand.ExecuteAsync(null);
+
+        Assert.Empty(vm.Rooms);
+        Assert.Single(snackbar.Messages);
     }
 }

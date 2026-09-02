@@ -55,7 +55,10 @@ public partial class ClassesViewModel : ObservableObject
     {
         if (_context is null) return;
 
-        var schoolClass = new SchoolClass { Name = "Новый класс", Shift = Shift.Первая, StudentCount = 25 };
+        // Имя уникально в базе — иначе повторное добавление сразу падало бы на дубликате, не давая
+        // добавить второй класс, пока не переименуешь первый.
+        var name = UniqueNameHelper.NextAvailable("Новый класс", Classes.Select(c => c.Name));
+        var schoolClass = new SchoolClass { Name = name, Shift = Shift.Первая, StudentCount = 25 };
         _context.SchoolClasses.Add(schoolClass);
         if (await TrySaveAsync("добавить класс"))
         {

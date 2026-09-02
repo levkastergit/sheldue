@@ -29,6 +29,15 @@ public partial class RoomsViewModel : ObservableObject
     [ObservableProperty]
     private string _newRoomTypeName = string.Empty;
 
+    [ObservableProperty]
+    private bool _isBulkAddPopupOpen;
+
+    [ObservableProperty]
+    private string _bulkAddFrom = string.Empty;
+
+    [ObservableProperty]
+    private string _bulkAddTo = string.Empty;
+
     public RoomsViewModel(IDbContextFactory<SchoolScheduleDbContext> contextFactory, ISnackbarService snackbar)
     {
         _contextFactory = contextFactory;
@@ -162,7 +171,11 @@ public partial class RoomsViewModel : ObservableObject
         // По умолчанию — тип "Обычный" (он есть в стартовом наборе миграции), а не первый по
         // алфавиту (им может оказаться, например, "Актовый зал").
         var defaultType = AllRoomTypes.FirstOrDefault(rt => rt.Name == "Обычный") ?? AllRoomTypes[0];
-        var room = new Room { Name = "Новый кабинет", Capacity = 25, RoomTypeId = defaultType.Id };
+        // Имя уникально в базе — если "Новый кабинет" уже есть, подбираем "Новый кабинет 2" и т.д.,
+        // иначе повторное добавление сразу падало бы на дубликате, не давая добавить второй кабинет,
+        // пока не переименуешь первый.
+        var name = UniqueNameHelper.NextAvailable("Новый кабинет", Rooms.Select(r => r.Name));
+        var room = new Room { Name = name, Capacity = 25, RoomTypeId = defaultType.Id };
         _context.Rooms.Add(room);
         if (await TrySaveAsync("добавить кабинет"))
         {
@@ -173,6 +186,79 @@ public partial class RoomsViewModel : ObservableObject
         else
         {
             _context.Rooms.Remove(room);
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleBulkAddPopup() => IsBulkAddPopupOpen = !IsBulkAddPopupOpen;
+
+    /// <summary>Добавляет сразу несколько кабинетов с номерами "от" и "до" включительно (например,
+    /// 101..110 — 10 кабинетов). Номера, которые уже заняты существующим кабинетом, пропускаются
+    /// (а не обрывают всю операцию) — про них сообщается отдельно после добавления остальных.</summary>
+    [RelayCommand]
+    private async Task BulkAddAsync()
+    {
+        if (_context is null) return;
+
+        if (!int.TryParse(BulkAddFrom, out var from) || !int.TryParse(BulkAddTo, out var to))
+        {
+            _snackbar.Show("Укажите номера «от» и «до» — только целые числа");
+            return;
+        }
+        if (from > to)
+            (from, to) = (to, from);
+        if (to - from + 1 > 200)
+        {
+            _snackbar.Show("Слишком большой диапазон — не больше 200 кабинетов за раз");
+            return;
+        }
+        if (AllRoomTypes.Count == 0)
+        {
+            _snackbar.Show("Сначала добавьте хотя бы один тип кабинета");
+            return;
+        }
+
+        var defaultType = AllRoomTypes.FirstOrDefault(rt => rt.Name == "Обычный") ?? AllRoomTypes[0];
+        var existingNames = Rooms.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var added = new List<Room>();
+        var skipped = new List<string>();
+
+        for (var n = from; n <= to; n++)
+        {
+            var name = n.ToString();
+            if (!existingNames.Add(name))
+            {
+                skipped.Add(name);
+                continue;
+            }
+            var room = new Room { Name = name, Capacity = 25, RoomTypeId = defaultType.Id, RoomType = defaultType };
+            _context.Rooms.Add(room);
+            added.Add(room);
+        }
+
+        if (added.Count == 0)
+        {
+            _snackbar.Show("Все кабинеты в этом диапазоне уже существуют");
+            return;
+        }
+
+        if (await TrySaveAsync($"добавить кабинеты {from}–{to}"))
+        {
+            foreach (var room in added)
+                Rooms.Add(room);
+            SelectedRoom = added[^1];
+            IsBulkAddPopupOpen = false;
+            BulkAddFrom = string.Empty;
+            BulkAddTo = string.Empty;
+
+            _snackbar.Show(skipped.Count == 0
+                ? $"Добавлено кабинетов: {added.Count}"
+                : $"Добавлено кабинетов: {added.Count}. Уже существовали и пропущены: {string.Join(", ", skipped.Take(10))}{(skipped.Count > 10 ? "…" : "")}");
+        }
+        else
+        {
+            foreach (var room in added)
+                _context.Rooms.Remove(room);
         }
     }
 
