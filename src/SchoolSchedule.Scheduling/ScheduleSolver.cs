@@ -5,30 +5,33 @@ using SchoolSchedule.Core.Models;
 namespace SchoolSchedule.Scheduling;
 
 /// <summary>
-/// Строит базовое недельное расписание (constraint satisfaction через CP-SAT). Для каждой строки
-/// учебного плана (класс+предмет[+подгруппа]) с назначенным учителем — LessonsPerWeek занятий,
-/// каждое выбирает урочный слот и кабинет так, чтобы:
+/// Строит базовое недельное расписание (CP-SAT). Для каждой строки учебного плана
+/// (класс+предмет[+подгруппа]) с назначенным учителем — LessonsPerWeek занятий, каждое выбирает
+/// урочный слот и кабинет так, чтобы:
 ///   - учитель/кабинет/класс не были заняты дважды в один слот (жёсткое);
 ///   - слот принадлежал смене класса (жёсткое);
 ///   - кабинет подходил по типу предмету, если задан (жёсткое);
 ///   - слот не попадал в окно недоступности учителя (жёсткое);
-///   - кабинет, закреплённый за учителем(-ями), по возможности используется именно ими — но это
-///     ПРИОРИТЕТ, а не запрет: если так эффективнее (или иначе расписание не сходится), в
-///     закреплённый кабинет всё равно может встать урок другого учителя (мягкое — минимизируется
-///     число таких "нарушений" через objective функцию, но полностью не запрещается);
 ///   - для строки учебного плана не больше ClassSubjectGroup.MaxLessonsPerDay её уроков в один
-///     день (по умолчанию 1 — не больше одного в день; жёсткое);
-///   - если у строки включено ClassSubjectGroup.PairedLessons и в какой-то день всё же встали два
-///     её урока — они обязаны идти подряд, без окна между ними (жёсткое, действует только при
-///     MaxLessonsPerDay больше 1).
-/// Подгруппы одного предмета одного класса (несколько строк с разным GroupLabel) встают в один и
-/// тот же слот (учатся параллельно), но с разными учителями/кабинетами — как и требуется на деле
-/// (иностранный язык, информатика и т.п.).
+///     день (по умолчанию 1; жёсткое), и если включено PairedLessons — любые два её урока в один
+///     день идут подряд, без окна между ними (жёсткое, только при MaxLessonsPerDay больше 1).
+/// Подгруппы одного предмета одного класса (несколько строк с разным GroupLabel) на "общей" части
+/// (min часов среди подгрупп) встают в один и тот же слот (учатся параллельно, с разными
+/// учителями/кабинетами) — как и требуется на деле (иностранный язык, информатика и т.п.). Если у
+/// какой-то подгруппы часов больше — "лишние" занятия сверх общего расставляются независимо: в это
+/// время у другой подгруппы может не быть урока вовсе, это нормально и учитывается при минимизации
+/// окон (см. ниже) — окно считается для КАЖДОЙ подгруппы отдельно (плюс уроки всего класса).
 ///
-/// Остальные мягкие ограничения (минимизация "окон", равномерное распределение по неделе) сюда
-/// сознательно не входят — модель ищет решение с минимумом нарушений закрепления кабинетов, а
-/// если закреплений нет вовсе, откатывается к чистой задаче выполнимости первым найденным
-/// решением (без objective), что для типовой школьной нагрузки обычно решается почти мгновенно.
+/// Дальше — три уровня МЯГКИХ ограничений (не запрещают решение, но solver ищет решение с
+/// минимумом нарушений, в строгом приоритетном порядке — через один objective с заведомо
+/// доминирующими весами, а не через отдельные "мягкие" и "жёсткие" фазы):
+///   1) окна ("пустые" уроки между двумя занятыми в один день) у учеников — считаются отдельно на
+///      каждый класс и, если у класса есть подгруппы, ОТДЕЛЬНО на каждую подгруппу (её собственные
+///      уроки + уроки всего класса, потому что именно это видят в своём дневном расписании
+///      реальные ученики этой подгруппы) — высший приоритет;
+///   2) окна у учителей — вторым приоритетом;
+///   3) нарушение приоритета закрепления кабинета за учителем (кабинет, закреплённый за кем-то,
+///      используется другим учителем, хотя не обязан был) — третьим, низшим приоритетом.
 /// </summary>
 public class ScheduleSolver
 {
@@ -64,8 +67,8 @@ public class ScheduleSolver
             .GroupBy(t => t.s.Shift)
             .ToDictionary(g => g.Key, g => g.Select(t => t.i).ToArray());
 
-        // Таблицы для CP-SAT AddElement: по индексу слота — день/номер урока. Нужны для
-        // ограничений "не больше N уроков этой строки в день" и "парные уроки — подряд".
+        // Таблицы для CP-SAT AddElement: по индексу слота — день/номер урока. Нужны для лимита
+        // уроков в день, парных уроков и минимизации окон.
         var slotToDay = timeSlots.Select(t => (long)(int)t.Day).ToArray();
         var slotToPeriod = timeSlots.Select(t => (long)t.PeriodNumber).ToArray();
         var distinctDays = timeSlots.Select(t => (int)t.Day).Distinct().ToArray();
@@ -88,7 +91,7 @@ public class ScheduleSolver
 
         // Закрепление кабинета за учителем — это приоритет, а не запрет: кабинет остаётся годным
         // по типу для любого учителя, кто мог бы там вести, просто закреплённые учителя
-        // предпочитаются (см. NonPreferredRoomsFor + минимизация нарушений ниже).
+        // предпочитаются (см. NonPreferredRoomsFor + минимизация нарушений в objective).
         int[] AllowedRoomsFor(Subject subject, int teacherId)
         {
             return rooms
@@ -135,18 +138,21 @@ public class ScheduleSolver
 
         var occGroupId = new List<int>();
         var occTeacherId = new List<int>();
+        var occClassId = new List<int>();
+        var occShift = new List<Shift>();
         var slotVars = new List<IntVar>();
         var roomVars = new List<IntVar>();
         var roomSlotVars = new List<IntVar>();
+        var occDayVars = new List<IntVar>();
+        var occPeriodVars = new List<IntVar>();
 
         var teacherSlotSets = new Dictionary<int, HashSet<IntVar>>();
         var classSlotSets = new Dictionary<int, HashSet<IntVar>>();
         var pinningViolations = new List<IntVar>();
 
-        // Все occurrence-слоты одной строки учебного плана (ClassSubjectGroup.Id) — в т.ч. те,
-        // что физически являются общей переменной с подгруппой-соседом (см. RegisterOccurrence)
-        // — нужны отдельно на группу, чтобы применить её собственные MaxLessonsPerDay/PairedLessons.
-        var groupOccurrenceSlots = new Dictionary<int, List<IntVar>>();
+        // Все occurrence-индексы одной строки учебного плана (ClassSubjectGroup.Id) — нужны
+        // отдельно на группу, чтобы применить её собственные MaxLessonsPerDay/PairedLessons.
+        var groupOccurrenceIndices = new Dictionary<int, List<int>>();
 
         void AddTeacherSlot(int teacherId, IntVar v)
         {
@@ -168,18 +174,27 @@ public class ScheduleSolver
             var roomSlotVar = model.NewIntVar(0, (long)rooms.Count * numSlots - 1, $"rs_{g.Id}_{occIndex}");
             model.Add(roomSlotVar == (roomVar * numSlots) + slotVar);
 
+            var dayVar = model.NewIntVar(1, 6, $"day_{occIndex}");
+            model.AddElement(slotVar, slotToDay, dayVar);
+            var periodVar = model.NewIntVar(1, maxPeriodNumber, $"per_{occIndex}");
+            model.AddElement(slotVar, slotToPeriod, periodVar);
+
             occGroupId.Add(g.Id);
             occTeacherId.Add(g.TeacherId!.Value);
+            occClassId.Add(g.ClassId);
+            occShift.Add(g.Class.Shift);
             slotVars.Add(slotVar);
             roomVars.Add(roomVar);
             roomSlotVars.Add(roomSlotVar);
+            occDayVars.Add(dayVar);
+            occPeriodVars.Add(periodVar);
 
             AddTeacherSlot(g.TeacherId.Value, slotVar);
             AddClassSlot(g.ClassId, slotVar);
 
-            if (!groupOccurrenceSlots.TryGetValue(g.Id, out var ownSlots))
-                groupOccurrenceSlots[g.Id] = ownSlots = [];
-            ownSlots.Add(slotVar);
+            if (!groupOccurrenceIndices.TryGetValue(g.Id, out var ownIndices))
+                groupOccurrenceIndices[g.Id] = ownIndices = [];
+            ownIndices.Add(occIndex);
 
             // Закрепление кабинета — приоритет, не запрет: если среди годных по типу кабинетов
             // есть закреплённые за ДРУГИМИ учителями, заведи булеву переменную "нарушил
@@ -200,40 +215,24 @@ public class ScheduleSolver
         // Ограничивает, сколько occurrence-слотов ОДНОЙ строки учебного плана может попасть на один
         // день (MaxLessonsPerDay), и, если включено PairedLessons, требует, чтобы любые два её
         // урока в один день шли подряд (без окна между ними — "сдвоенный" урок).
-        void ApplyDayLimitAndPairing(ClassSubjectGroup g, List<IntVar> occSlots)
+        void ApplyDayLimitAndPairing(ClassSubjectGroup g, List<int> indices)
         {
-            if (occSlots.Count <= 1) return;
+            if (indices.Count <= 1) return;
 
-            var needsDayLimit = g.MaxLessonsPerDay < occSlots.Count;
+            var needsDayLimit = g.MaxLessonsPerDay < indices.Count;
             var needsPairing = g.PairedLessons && g.MaxLessonsPerDay >= 2;
             if (!needsDayLimit && !needsPairing) return;
-
-            var dayVars = new List<IntVar>();
-            var periodVars = new List<IntVar>();
-            for (var i = 0; i < occSlots.Count; i++)
-            {
-                var dayVar = model.NewIntVar(1, 6, $"day_{g.Id}_{i}");
-                model.AddElement(occSlots[i], slotToDay, dayVar);
-                dayVars.Add(dayVar);
-
-                if (needsPairing)
-                {
-                    var periodVar = model.NewIntVar(1, maxPeriodNumber, $"per_{g.Id}_{i}");
-                    model.AddElement(occSlots[i], slotToPeriod, periodVar);
-                    periodVars.Add(periodVar);
-                }
-            }
 
             if (needsDayLimit)
             {
                 foreach (var day in distinctDays)
                 {
                     var indicators = new List<IntVar>();
-                    for (var i = 0; i < occSlots.Count; i++)
+                    foreach (var idx in indices)
                     {
-                        var isOnDay = model.NewBoolVar($"dind_{g.Id}_{i}_{day}");
-                        model.Add(dayVars[i] == day).OnlyEnforceIf(isOnDay);
-                        model.Add(dayVars[i] != day).OnlyEnforceIf(isOnDay.Not());
+                        var isOnDay = model.NewBoolVar($"dind_{g.Id}_{idx}_{day}");
+                        model.Add(occDayVars[idx] == day).OnlyEnforceIf(isOnDay);
+                        model.Add(occDayVars[idx] != day).OnlyEnforceIf(isOnDay.Not());
                         indicators.Add(isOnDay);
                     }
                     model.Add(LinearExpr.Sum(indicators) <= g.MaxLessonsPerDay);
@@ -242,16 +241,17 @@ public class ScheduleSolver
 
             if (needsPairing)
             {
-                for (var i = 0; i < occSlots.Count; i++)
+                for (var a = 0; a < indices.Count; a++)
                 {
-                    for (var j = i + 1; j < occSlots.Count; j++)
+                    for (var b = a + 1; b < indices.Count; b++)
                     {
+                        var (i, j) = (indices[a], indices[b]);
                         var sameDay = model.NewBoolVar($"sd_{g.Id}_{i}_{j}");
-                        model.Add(dayVars[i] == dayVars[j]).OnlyEnforceIf(sameDay);
-                        model.Add(dayVars[i] != dayVars[j]).OnlyEnforceIf(sameDay.Not());
+                        model.Add(occDayVars[i] == occDayVars[j]).OnlyEnforceIf(sameDay);
+                        model.Add(occDayVars[i] != occDayVars[j]).OnlyEnforceIf(sameDay.Not());
 
                         var diff = model.NewIntVar(-maxPeriodNumber, maxPeriodNumber, $"diff_{g.Id}_{i}_{j}");
-                        model.Add(diff == periodVars[i] - periodVars[j]);
+                        model.Add(diff == occPeriodVars[i] - occPeriodVars[j]);
                         var absDiff = model.NewIntVar(0, maxPeriodNumber, $"absdiff_{g.Id}_{i}_{j}");
                         model.AddAbsEquality(absDiff, diff);
                         // Подряд — |разница номеров урока| == 1, но только если оба урока в этот день.
@@ -295,7 +295,9 @@ public class ScheduleSolver
             {
                 // Подгруппы: синхронизированные занятия (min часов среди подгрупп) встают в один и тот
                 // же слот, но с индивидуальным кабинетом/учителем на подгруппу. Если у какой-то строки
-                // часов больше остальных — "лишние" сверх минимума занятия расставляются независимо.
+                // часов больше остальных — "лишние" сверх минимума занятия расставляются независимо:
+                // в это время у другой подгруппы может и не быть урока (см. учёт окон на подгруппу
+                // отдельно от учёта окон на весь класс — BuildStudentGapEntities ниже).
                 var perRowAllowedSlots = rows.ToDictionary(r => r.Id, r => AllowedSlotsFor(schoolClass.Shift, r.TeacherId!.Value));
                 var perRowAllowedRooms = rows.ToDictionary(r => r.Id, r => AllowedRoomsFor(subject, r.TeacherId!.Value));
 
@@ -332,6 +334,7 @@ public class ScheduleSolver
                 }
 
                 // Занятия сверх синхронизированного минимума — независимо, как обычная одиночная строка.
+                // Именно здесь и возникает "у одной подгруппы урок есть, а у другой в это время нет".
                 foreach (var r in rows.Where(r => r.LessonsPerWeek > synced))
                 {
                     var allowedSlots = perRowAllowedSlots[r.Id];
@@ -362,8 +365,8 @@ public class ScheduleSolver
 
         foreach (var g in eligible)
         {
-            if (groupOccurrenceSlots.TryGetValue(g.Id, out var ownSlots))
-                ApplyDayLimitAndPairing(g, ownSlots);
+            if (groupOccurrenceIndices.TryGetValue(g.Id, out var ownIndices))
+                ApplyDayLimitAndPairing(g, ownIndices);
         }
 
         foreach (var set in teacherSlotSets.Values.Where(s => s.Count > 1))
@@ -372,11 +375,105 @@ public class ScheduleSolver
             model.AddAllDifferent(set);
         model.AddAllDifferent(roomSlotVars);
 
-        // Если в школе вообще есть закреплённые кабинеты — ищем решение с минимумом нарушений
-        // закрепления (мягкий приоритет). Если закреплений нет, objective не добавляется — модель
-        // остаётся чистой задачей выполнимости и решается первым найденным решением (быстрее).
-        if (pinningViolations.Count > 0)
-            model.Minimize(LinearExpr.Sum(pinningViolations));
+        // --- Минимизация окон (приоритеты 1 и 2) + нарушений закрепления кабинета (приоритет 3) ---
+        //
+        // Окно на (сущность, день, смена) считается как "длина промежутка от первого до последнего
+        // урока этого дня минус число реально стоящих в нём уроков": gap = (last-first+1) - count.
+        // Это 0, если уроки идут подряд, и 0 же для пустого дня (гасится через hasAnyLesson) — при
+        // этом сами first/last не обязаны быть заданы явно верным способом: достаточно "first <=
+        // период любого урока этого дня" и "last >= период любого урока этого дня", а к точному
+        // минимуму/максимуму их подтягивает сам objective (минимизация gap только выигрывает от
+        // того, чтобы first/last были как можно ближе друг к другу).
+        var groupById = eligible.ToDictionary(g => g.Id);
+
+        List<IntVar> BuildGapPenalties(List<int> indices, string label)
+        {
+            var penalties = new List<IntVar>();
+            var byShift = indices.GroupBy(i => occShift[i]);
+            foreach (var shiftGroup in byShift)
+            {
+                if (!slotsByShift.TryGetValue(shiftGroup.Key, out var shiftSlotIdx) || shiftSlotIdx.Length == 0)
+                    continue;
+                var occInShift = shiftGroup.ToList();
+                var daysForShift = shiftSlotIdx.Select(idx => (int)timeSlots[idx].Day).Distinct();
+
+                foreach (var day in daysForShift)
+                {
+                    var tag = $"{label}_{shiftGroup.Key}_{day}_{penalties.Count}";
+                    var onDay = new List<BoolVar>();
+                    foreach (var idx in occInShift)
+                    {
+                        var b = model.NewBoolVar($"od_{tag}_{idx}");
+                        model.Add(occDayVars[idx] == day).OnlyEnforceIf(b);
+                        model.Add(occDayVars[idx] != day).OnlyEnforceIf(b.Not());
+                        onDay.Add(b);
+                    }
+
+                    var hasAny = model.NewBoolVar($"has_{tag}");
+                    model.Add(LinearExpr.Sum(onDay) >= 1).OnlyEnforceIf(hasAny);
+                    model.Add(LinearExpr.Sum(onDay) == 0).OnlyEnforceIf(hasAny.Not());
+
+                    var first = model.NewIntVar(1, maxPeriodNumber, $"first_{tag}");
+                    var last = model.NewIntVar(1, maxPeriodNumber, $"last_{tag}");
+                    for (var k = 0; k < occInShift.Count; k++)
+                    {
+                        model.Add(first <= occPeriodVars[occInShift[k]]).OnlyEnforceIf(onDay[k]);
+                        model.Add(last >= occPeriodVars[occInShift[k]]).OnlyEnforceIf(onDay[k]);
+                    }
+
+                    var gap = model.NewIntVar(0, maxPeriodNumber, $"gap_{tag}");
+                    model.Add(gap == last - first + 1 - LinearExpr.Sum(onDay)).OnlyEnforceIf(hasAny);
+                    model.Add(gap == 0).OnlyEnforceIf(hasAny.Not());
+                    penalties.Add(gap);
+                }
+            }
+            return penalties;
+        }
+
+        // Ученики (приоритет 1): по классу — все его occurrence'ы; если у класса есть подгруппы —
+        // отдельная "сущность" на каждую подгруппу (уроки всего класса + именно её уроки), потому
+        // что реальные ученики этой подгруппы в свой день видят и то, и другое.
+        var studentGapPenalties = new List<IntVar>();
+        foreach (var classGroup in Enumerable.Range(0, occGroupId.Count).GroupBy(i => occClassId[i]))
+        {
+            var classId = classGroup.Key;
+            var allIndices = classGroup.ToList();
+            var labels = allIndices.Select(i => groupById[occGroupId[i]].GroupLabel).Where(l => l is not null).Distinct().ToList();
+
+            if (labels.Count == 0)
+            {
+                studentGapPenalties.AddRange(BuildGapPenalties(allIndices, $"cls{classId}"));
+            }
+            else
+            {
+                var wholeClassIndices = allIndices.Where(i => groupById[occGroupId[i]].GroupLabel is null).ToList();
+                foreach (var label in labels)
+                {
+                    var subgroupIndices = allIndices.Where(i => groupById[occGroupId[i]].GroupLabel == label).ToList();
+                    studentGapPenalties.AddRange(BuildGapPenalties(wholeClassIndices.Concat(subgroupIndices).ToList(), $"cls{classId}_{label}"));
+                }
+            }
+        }
+
+        // Учителя (приоритет 2): все occurrence'ы этого учителя, независимо от класса/подгруппы.
+        var teacherGapPenalties = new List<IntVar>();
+        foreach (var teacherGroup in Enumerable.Range(0, occGroupId.Count).GroupBy(i => occTeacherId[i]))
+            teacherGapPenalties.AddRange(BuildGapPenalties(teacherGroup.ToList(), $"tch{teacherGroup.Key}"));
+
+        // Веса подобраны так, чтобы приоритет был СТРОГИМ: любое улучшение на уровне N важнее
+        // абсолютно любой комбинации ухудшений на уровнях N+1, N+2 — а не просто "в среднем важнее".
+        var maxPinningSum = (long)pinningViolations.Count; // каждая переменная — 0 или 1
+        var maxTeacherGapSum = (long)teacherGapPenalties.Count * maxPeriodNumber; // грубая, но надёжная верхняя оценка
+        const long wPinning = 1L;
+        var wTeacherGap = maxPinningSum * wPinning + 1;
+        var wStudentGap = maxTeacherGapSum * wTeacherGap + maxPinningSum * wPinning + 1;
+
+        var objectiveTerms = new List<LinearExpr>();
+        foreach (var p in studentGapPenalties) objectiveTerms.Add(p * wStudentGap);
+        foreach (var p in teacherGapPenalties) objectiveTerms.Add(p * wTeacherGap);
+        foreach (var p in pinningViolations) objectiveTerms.Add(p * wPinning);
+        if (objectiveTerms.Count > 0)
+            model.Minimize(LinearExpr.Sum(objectiveTerms));
 
         var solver = new CpSolver
         {
@@ -394,13 +491,17 @@ public class ScheduleSolver
                 lessons.Add(new GeneratedLesson(occGroupId[i], occTeacherId[i], rooms[roomIdx].Id, timeSlots[slotIdx].Id));
             }
 
+            var studentGaps = studentGapPenalties.Sum(p => solver.Value(p));
+            var teacherGaps = teacherGapPenalties.Sum(p => solver.Value(p));
+            var gapsSummary = $"Окон у учеников: {studentGaps}, у учителей: {teacherGaps}.";
+
             var status2 = warnings.Count > 0 ? ScheduleGenerationStatus.PartialSuccess : ScheduleGenerationStatus.Success;
             return new ScheduleGenerationResult
             {
                 Status = status2,
                 Message = status2 == ScheduleGenerationStatus.Success
-                    ? $"Расписание построено: {lessons.Count} уроков расставлено без конфликтов."
-                    : $"Расписание построено для {lessons.Count} уроков, но {warnings.Count} строк учебного плана в него не попали — см. список ниже.",
+                    ? $"Расписание построено: {lessons.Count} уроков расставлено без конфликтов. {gapsSummary}"
+                    : $"Расписание построено для {lessons.Count} уроков, но {warnings.Count} строк учебного плана в него не попали — см. список ниже. {gapsSummary}",
                 Lessons = lessons,
                 Warnings = warnings,
             };

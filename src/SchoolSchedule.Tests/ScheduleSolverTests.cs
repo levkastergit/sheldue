@@ -474,4 +474,150 @@ public class ScheduleSolverTests
 
         Assert.Equal(ScheduleGenerationStatus.Infeasible, result.Status);
     }
+
+    [Fact]
+    public void Minimizes_student_gaps_by_scheduling_lessons_adjacently_when_possible()
+    {
+        var classA = new SchoolClass { Id = 1, Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+        var math = new Subject { Id = 1, Name = "Математика" };
+        var russian = new Subject { Id = 2, Name = "Русский язык" };
+        var teacher1 = new Teacher { Id = 1, FullName = "Иванова И.И." };
+        var teacher2 = new Teacher { Id = 2, FullName = "Петрова П.П." };
+        var room = MakeRoom(1, OrdinaryType());
+
+        // Один день, 4 урока — оба предмета гарантированно попадут в этот день; без минимизации
+        // окон солвер мог бы с тем же успехом поставить их через урок (1 и 3), с окном на 2-м.
+        var settings = new ScheduleSettings { DaysPerWeek = 1, PeriodsPerDayShift1 = 4 };
+        var timeSlots = GenerateSlotsWithIds(settings);
+        var input = new ScheduleInput
+        {
+            Rooms = [room],
+            TimeSlots = timeSlots,
+            Groups = [MakeGroup(1, classA, math, teacher1, 1), MakeGroup(2, classA, russian, teacher2, 1)],
+            Unavailabilities = [],
+            TimeLimit = ShortLimit,
+        };
+
+        var result = new ScheduleSolver().Generate(input);
+
+        Assert.Equal(ScheduleGenerationStatus.Success, result.Status);
+        var periods = result.Lessons.Select(l => PeriodOf(timeSlots, l.TimeSlotId)).OrderBy(p => p).ToList();
+        Assert.Equal(2, periods.Count);
+        Assert.Equal(1, periods[1] - periods[0]);
+    }
+
+    [Fact]
+    public void Minimizes_teacher_gaps_across_different_classes_when_students_are_unaffected()
+    {
+        var classA = new SchoolClass { Id = 1, Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+        var classB = new SchoolClass { Id = 2, Name = "5Б", Grade = 5, Shift = Shift.Первая, StudentCount = 24 };
+        var math = new Subject { Id = 1, Name = "Математика" };
+        var teacher = new Teacher { Id = 1, FullName = "Иванова И.И." };
+        var room = MakeRoom(1, OrdinaryType());
+
+        // Каждый класс получает всего 1 урок — окна для самих классов невозможны в принципе, так
+        // что единственный сработавший приоритет здесь — минимизация окон у учителя.
+        var settings = new ScheduleSettings { DaysPerWeek = 1, PeriodsPerDayShift1 = 4 };
+        var timeSlots = GenerateSlotsWithIds(settings);
+        var input = new ScheduleInput
+        {
+            Rooms = [room],
+            TimeSlots = timeSlots,
+            Groups = [MakeGroup(1, classA, math, teacher, 1), MakeGroup(2, classB, math, teacher, 1)],
+            Unavailabilities = [],
+            TimeLimit = ShortLimit,
+        };
+
+        var result = new ScheduleSolver().Generate(input);
+
+        Assert.Equal(ScheduleGenerationStatus.Success, result.Status);
+        var periods = result.Lessons.Select(l => PeriodOf(timeSlots, l.TimeSlotId)).OrderBy(p => p).ToList();
+        Assert.Equal(2, periods.Count);
+        Assert.Equal(1, periods[1] - periods[0]);
+    }
+
+    [Fact]
+    public void Student_gap_priority_beats_teacher_gap_priority_when_they_conflict()
+    {
+        // Три урока одного класса: Математика и Английский у одного учителя (T1), История — у
+        // другого (T2). T1 недоступен на 3-м уроке. Единственный способ поставить все 3 урока
+        // класса подряд (0 окон у учеников) — использовать блок {2,3,4} или {1,2,3} (единственные
+        // варианты из 3 подряд идущих уроков при 5 уроках в сетке — а любой такой блок в диапазоне
+        // 1..5 обязательно содержит 3-й урок), и тогда Истории (T2) достаётся именно 3-й урок (раз
+        // T1 туда не может), а T1 достаются два КРАЙНИХ урока блока — не подряд, то есть окно
+        // гарантированно возникает у T1. Alternative-расстановка без окна у класса (например,
+        // 1,2,4) позволила бы T1 избежать окна — но приоритет учеников выше, так что солвер обязан
+        // выбрать вариант с нулевым окном у класса, даже ценой окна у T1.
+        var classA = new SchoolClass { Id = 1, Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+        var math = new Subject { Id = 1, Name = "Математика" };
+        var english = new Subject { Id = 2, Name = "Английский язык" };
+        var history = new Subject { Id = 3, Name = "История" };
+        var t1 = new Teacher { Id = 1, FullName = "Т1" };
+        var t2 = new Teacher { Id = 2, FullName = "Т2" };
+        var room = MakeRoom(1, OrdinaryType());
+
+        var settings = new ScheduleSettings { DaysPerWeek = 1, PeriodsPerDayShift1 = 5 };
+        var timeSlots = GenerateSlotsWithIds(settings);
+        var input = new ScheduleInput
+        {
+            Rooms = [room],
+            TimeSlots = timeSlots,
+            Groups =
+            [
+                MakeGroup(1, classA, math, t1, 1),
+                MakeGroup(2, classA, english, t1, 1),
+                MakeGroup(3, classA, history, t2, 1),
+            ],
+            Unavailabilities = [new TeacherUnavailability { TeacherId = t1.Id, Day = SchoolDay.Понедельник, PeriodNumber = 3 }],
+            TimeLimit = ShortLimit,
+        };
+
+        var result = new ScheduleSolver().Generate(input);
+
+        Assert.Equal(ScheduleGenerationStatus.Success, result.Status);
+        var periods = result.Lessons.Select(l => PeriodOf(timeSlots, l.TimeSlotId)).OrderBy(p => p).ToList();
+        Assert.Equal(3, periods.Count);
+        Assert.Equal(periods[0] + 1, periods[1]);
+        Assert.Equal(periods[1] + 1, periods[2]); // все 3 урока класса подряд — 0 окон у учеников
+    }
+
+    [Fact]
+    public void Subgroup_with_extra_lessons_beyond_sibling_does_not_break_gap_accounting()
+    {
+        // Группа 1 — 2 урока/нед., Группа 2 — 1 урок/нед. Общая (синхронизированная) часть — 1
+        // occurrence; ещё 1 occurrence — "лишний" урок Группы 1, на который у Группы 2 в это время
+        // урока нет. Плюс обычный (без подгрупп) предмет на весь класс. Проверяем, что такая
+        // асимметрия не ломает построение расписания и не даёт лишних/пропущенных уроков.
+        var classA = new SchoolClass { Id = 1, Name = "7А", Grade = 7, Shift = Shift.Первая, StudentCount = 26 };
+        var english = new Subject { Id = 1, Name = "Английский язык" };
+        var math = new Subject { Id = 2, Name = "Математика" };
+        var teacher1 = new Teacher { Id = 1, FullName = "Группа 1" };
+        var teacher2 = new Teacher { Id = 2, FullName = "Группа 2" };
+        var mathTeacher = new Teacher { Id = 3, FullName = "Математик" };
+        var room1 = MakeRoom(1, OrdinaryType());
+        var room2 = MakeRoom(2, OrdinaryType());
+
+        var settings = new ScheduleSettings { DaysPerWeek = 3, PeriodsPerDayShift1 = 6 };
+        var input = new ScheduleInput
+        {
+            Rooms = [room1, room2],
+            TimeSlots = GenerateSlotsWithIds(settings),
+            Groups =
+            [
+                MakeGroup(1, classA, english, teacher1, 2, "Группа 1"),
+                MakeGroup(2, classA, english, teacher2, 1, "Группа 2"),
+                MakeGroup(3, classA, math, mathTeacher, 1),
+            ],
+            Unavailabilities = [],
+            TimeLimit = ShortLimit,
+        };
+
+        var result = new ScheduleSolver().Generate(input);
+
+        Assert.Equal(ScheduleGenerationStatus.Success, result.Status);
+        Assert.Equal(4, result.Lessons.Count);
+        Assert.Equal(2, result.Lessons.Count(l => l.ClassSubjectGroupId == 1));
+        Assert.Equal(1, result.Lessons.Count(l => l.ClassSubjectGroupId == 2));
+        Assert.Equal(1, result.Lessons.Count(l => l.ClassSubjectGroupId == 3));
+    }
 }
