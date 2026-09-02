@@ -25,7 +25,84 @@
                     <TextBlock Text="Добавить предмет" />
                 </StackPanel>
             </Button>
+            <Button x:Name="BulkApplyButton" DockPanel.Dock="Right" HorizontalAlignment="Right" Margin="0,0,12,0"
+                    Style="{StaticResource AppOutlinedButton}"
+                    Command="{Binding ToggleBulkApplyPopupCommand}">
+                <StackPanel Orientation="Horizontal">
+                    <materialDesign:PackIcon Kind="PlaylistPlus" Margin="0,0,8,0" />
+                    <TextBlock Text="Применить ко многим классам" />
+                </StackPanel>
+            </Button>
         </DockPanel>
+
+        <Popup PlacementTarget="{Binding ElementName=BulkApplyButton}" Placement="Bottom"
+               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+               IsOpen="{Binding IsBulkApplyPopupOpen}">
+            <materialDesign:Card Padding="16" MinWidth="380" MaxWidth="420" materialDesign:ElevationAssist.Elevation="Dp8">
+                <StackPanel>
+                    <TextBlock Text="Применить ко многим классам сразу" Style="{StaticResource SectionLabelStyle}" />
+                    <TextBlock TextWrapping="Wrap" Opacity="0.6" FontSize="12.5" Margin="0,0,0,12"
+                               Text="Например, сразу поставить 5 уроков русского языка в неделю всем 5-м классам — вместо того чтобы заходить в каждый класс по отдельности. Если у класса эта строка уже есть — она обновится, а не задвоится." />
+
+                    <TextBlock Text="Параллель" Opacity="0.7" FontSize="12.5" Margin="0,0,0,6" />
+                    <ItemsControl ItemsSource="{Binding BulkApplyGrades}" Margin="0,0,0,10">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Margin="0,0,8,8"
+                                        Style="{StaticResource AppFlatButton}"
+                                        Command="{Binding DataContext.SelectGradeCommand, ElementName=Root}"
+                                        CommandParameter="{Binding}">
+                                    <TextBlock Text="{Binding StringFormat={}{0} класс}" />
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="Классы" Opacity="0.7" FontSize="12.5" Margin="0,0,0,6" />
+                    <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto" Margin="0,0,0,4">
+                        <ItemsControl ItemsSource="{Binding BulkApplyClassSelections}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,2,18,2" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <Button Content="Снять выбор" HorizontalAlignment="Left" Margin="0,0,0,14"
+                            Style="{StaticResource AppFlatButton}"
+                            Command="{Binding ClearBulkSelectionCommand}" />
+
+                    <ComboBox Margin="0,0,0,10"
+                              materialDesign:HintAssist.Hint="Предмет"
+                              ItemsSource="{Binding AllSubjects}" DisplayMemberPath="Name"
+                              SelectedItem="{Binding BulkApplySubject}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBox Width="130" Margin="0,0,10,0"
+                                 materialDesign:HintAssist.Hint="Уроков/нед."
+                                 Text="{Binding BulkApplyLessonsPerWeek, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Width="130"
+                                 materialDesign:HintAssist.Hint="Уроков/день"
+                                 Text="{Binding BulkApplyMaxLessonsPerDay, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                    <CheckBox Content="Парные уроки" Margin="0,0,0,16"
+                              IsChecked="{Binding BulkApplyPairedLessons}" />
+
+                    <Button Content="Применить" HorizontalAlignment="Left"
+                            Style="{StaticResource AppRaisedButton}"
+                            Command="{Binding BulkApplyCommand}" />
+                </StackPanel>
+            </materialDesign:Card>
+        </Popup>
 
         <DockPanel Grid.Row="1" Margin="0,0,0,16">
             <TextBlock Text="Класс:" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="Medium" />

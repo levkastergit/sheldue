@@ -27,6 +27,25 @@ public partial class CurriculumViewModel : ObservableObject
     [ObservableProperty]
     private SchoolClass? _selectedClass;
 
+    // --- "Применить ко многим классам сразу" ---
+    public ObservableCollection<ClassSelection> BulkApplyClassSelections { get; } = [];
+    public ObservableCollection<int> BulkApplyGrades { get; } = [];
+
+    [ObservableProperty]
+    private bool _isBulkApplyPopupOpen;
+
+    [ObservableProperty]
+    private Subject? _bulkApplySubject;
+
+    [ObservableProperty]
+    private string _bulkApplyLessonsPerWeek = string.Empty;
+
+    [ObservableProperty]
+    private string _bulkApplyMaxLessonsPerDay = "1";
+
+    [ObservableProperty]
+    private bool _bulkApplyPairedLessons;
+
     public CurriculumViewModel(IDbContextFactory<SchoolScheduleDbContext> contextFactory, ISnackbarService snackbar)
     {
         _contextFactory = contextFactory;
@@ -47,8 +66,20 @@ public partial class CurriculumViewModel : ObservableObject
         foreach (var subject in await _context.Subjects.OrderBy(s => s.Name).ToListAsync())
             AllSubjects.Add(subject);
 
+        BulkApplyGrades.Clear();
+        foreach (var grade in AllClasses.Select(c => c.Grade).Distinct().OrderBy(g => g))
+            BulkApplyGrades.Add(grade);
+        RebuildBulkApplyClassSelections();
+
         SelectedClass ??= AllClasses.FirstOrDefault();
         await ReloadGroupsAsync();
+    }
+
+    private void RebuildBulkApplyClassSelections()
+    {
+        BulkApplyClassSelections.Clear();
+        foreach (var schoolClass in AllClasses)
+            BulkApplyClassSelections.Add(new ClassSelection(schoolClass, false));
     }
 
     partial void OnSelectedClassChanged(SchoolClass? value) => _ = ReloadGroupsAsync();
@@ -105,6 +136,103 @@ public partial class CurriculumViewModel : ObservableObject
         else
         {
             _context.ClassSubjectGroups.Remove(group);
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleBulkApplyPopup()
+    {
+        if (!IsBulkApplyPopupOpen)
+            RebuildBulkApplyClassSelections(); // сброс выбора при каждом открытии — предсказуемее, чем помнить прошлый раз
+        IsBulkApplyPopupOpen = !IsBulkApplyPopupOpen;
+    }
+
+    [RelayCommand]
+    private void SelectGrade(int grade)
+    {
+        foreach (var selection in BulkApplyClassSelections.Where(s => s.Grade == grade))
+            selection.IsSelected = true;
+    }
+
+    [RelayCommand]
+    private void ClearBulkSelection()
+    {
+        foreach (var selection in BulkApplyClassSelections)
+            selection.IsSelected = false;
+    }
+
+    /// <summary>Ставит один и тот же предмет (весь класс, без подгруппы) с одними и теми же
+    /// часами сразу нескольким классам — например, всем пятым сразу 5 уроков русского в неделю,
+    /// вместо того чтобы заходить в каждый класс по отдельности. Если у класса эта строка уже
+    /// есть — обновляет её, а не создаёт дубликат (безопасно применять повторно).</summary>
+    [RelayCommand]
+    private async Task BulkApplyAsync()
+    {
+        if (_context is null) return;
+
+        var selectedClasses = BulkApplyClassSelections.Where(s => s.IsSelected).Select(s => s.Class).ToList();
+        if (selectedClasses.Count == 0)
+        {
+            _snackbar.Show("Выберите хотя бы один класс");
+            return;
+        }
+        if (BulkApplySubject is null)
+        {
+            _snackbar.Show("Выберите предмет");
+            return;
+        }
+        if (!int.TryParse(BulkApplyLessonsPerWeek, out var lessonsPerWeek) || lessonsPerWeek < 1)
+        {
+            _snackbar.Show("«Уроков/нед.» — целое число не меньше 1");
+            return;
+        }
+        if (!int.TryParse(BulkApplyMaxLessonsPerDay, out var maxLessonsPerDay) || maxLessonsPerDay < 1)
+        {
+            _snackbar.Show("«Уроков/день» — целое число не меньше 1");
+            return;
+        }
+
+        var classIds = selectedClasses.Select(c => c.Id).ToHashSet();
+        var existingByClassId = await _context.ClassSubjectGroups
+            .Where(g => classIds.Contains(g.ClassId) && g.SubjectId == BulkApplySubject.Id && g.GroupLabel == null)
+            .ToDictionaryAsync(g => g.ClassId);
+
+        var createdCount = 0;
+        var updatedCount = 0;
+        foreach (var schoolClass in selectedClasses)
+        {
+            if (existingByClassId.TryGetValue(schoolClass.Id, out var existing))
+            {
+                existing.LessonsPerWeek = lessonsPerWeek;
+                existing.MaxLessonsPerDay = maxLessonsPerDay;
+                existing.PairedLessons = BulkApplyPairedLessons;
+                updatedCount++;
+            }
+            else
+            {
+                _context.ClassSubjectGroups.Add(new ClassSubjectGroup
+                {
+                    ClassId = schoolClass.Id,
+                    SubjectId = BulkApplySubject.Id,
+                    LessonsPerWeek = lessonsPerWeek,
+                    MaxLessonsPerDay = maxLessonsPerDay,
+                    PairedLessons = BulkApplyPairedLessons,
+                });
+                createdCount++;
+            }
+        }
+
+        if (await TrySaveAsync("применить предмет сразу к нескольким классам"))
+        {
+            IsBulkApplyPopupOpen = false;
+            _snackbar.Show(updatedCount == 0
+                ? $"Добавлено классам: {createdCount}"
+                : $"Добавлено классам: {createdCount}, обновлено (уже было): {updatedCount}");
+
+            // Если среди затронутых классов — тот, что сейчас открыт справа, сразу обновляем и его
+            // таблицу, а не только базу, иначе выглядело бы, будто применение не сработало.
+            if (SelectedClass is not null && classIds.Contains(SelectedClass.Id))
+                await ReloadGroupsAsync();
         }
     }
 

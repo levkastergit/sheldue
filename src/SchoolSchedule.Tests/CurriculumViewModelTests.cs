@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.EntityFrameworkCore;
 using SchoolSchedule.App.ViewModels;
 using SchoolSchedule.Core.Models;
 using SchoolSchedule.Tests.TestSupport;
@@ -231,5 +232,140 @@ public class CurriculumViewModelTests
             await task;
 
         Assert.Equal(newSubject.Id, group.SubjectId);
+    }
+
+    private static async Task<(int class5AId, int class5BId, int class6AId, int subjectId)> SeedTwoGradesAndSubjectAsync(SqliteTestContextFactory factory)
+    {
+        await using var context = factory.CreateDbContext();
+        var class5A = new SchoolClass { Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+        var class5B = new SchoolClass { Name = "5Б", Grade = 5, Shift = Shift.Первая, StudentCount = 24 };
+        var class6A = new SchoolClass { Name = "6А", Grade = 6, Shift = Shift.Первая, StudentCount = 26 };
+        var russian = new Subject { Name = "Русский язык" };
+        context.AddRange(class5A, class5B, class6A, russian);
+        await context.SaveChangesAsync();
+        return (class5A.Id, class5B.Id, class6A.Id, russian.Id);
+    }
+
+    [Fact]
+    public async Task SelectGrade_checks_only_classes_of_that_grade()
+    {
+        using var factory = new SqliteTestContextFactory();
+        await SeedTwoGradesAndSubjectAsync(factory);
+        var vm = new CurriculumViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        vm.SelectGradeCommand.Execute(5);
+
+        Assert.True(vm.BulkApplyClassSelections.Single(s => s.Name == "5А").IsSelected);
+        Assert.True(vm.BulkApplyClassSelections.Single(s => s.Name == "5Б").IsSelected);
+        Assert.False(vm.BulkApplyClassSelections.Single(s => s.Name == "6А").IsSelected);
+    }
+
+    [Fact]
+    public async Task BulkApply_creates_the_same_subject_for_every_selected_class_but_not_others()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var (class5AId, class5BId, class6AId, subjectId) = await SeedTwoGradesAndSubjectAsync(factory);
+        var vm = new CurriculumViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        vm.SelectGradeCommand.Execute(5);
+        vm.BulkApplySubject = vm.AllSubjects.Single(s => s.Id == subjectId);
+        vm.BulkApplyLessonsPerWeek = "5";
+        vm.BulkApplyMaxLessonsPerDay = "1";
+        await vm.BulkApplyCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsBulkApplyPopupOpen);
+
+        await using var check = factory.CreateDbContext();
+        var groups = await check.ClassSubjectGroups.ToListAsync();
+        Assert.Equal(2, groups.Count);
+        Assert.Contains(groups, g => g.ClassId == class5AId && g.LessonsPerWeek == 5);
+        Assert.Contains(groups, g => g.ClassId == class5BId && g.LessonsPerWeek == 5);
+        Assert.DoesNotContain(groups, g => g.ClassId == class6AId);
+    }
+
+    [Fact]
+    public async Task BulkApply_updates_an_existing_row_instead_of_duplicating_it()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var (class5AId, class5BId, _, subjectId) = await SeedTwoGradesAndSubjectAsync(factory);
+        await using (var seed = factory.CreateDbContext())
+        {
+            seed.ClassSubjectGroups.Add(new ClassSubjectGroup { ClassId = class5AId, SubjectId = subjectId, LessonsPerWeek = 3 });
+            await seed.SaveChangesAsync();
+        }
+
+        var vm = new CurriculumViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+        vm.SelectGradeCommand.Execute(5);
+        vm.BulkApplySubject = vm.AllSubjects.Single(s => s.Id == subjectId);
+        vm.BulkApplyLessonsPerWeek = "5";
+        vm.BulkApplyMaxLessonsPerDay = "2";
+        vm.BulkApplyPairedLessons = true;
+        await vm.BulkApplyCommand.ExecuteAsync(null);
+
+        await using var check = factory.CreateDbContext();
+        var groups = await check.ClassSubjectGroups.ToListAsync();
+        // Всё ещё по одной строке на класс — существующая обновилась, а не задвоилась.
+        Assert.Equal(2, groups.Count);
+        var class5AGroup = groups.Single(g => g.ClassId == class5AId);
+        Assert.Equal(5, class5AGroup.LessonsPerWeek);
+        Assert.Equal(2, class5AGroup.MaxLessonsPerDay);
+        Assert.True(class5AGroup.PairedLessons);
+    }
+
+    [Fact]
+    public async Task BulkApply_immediately_refreshes_the_currently_open_class()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var (class5AId, _, _, subjectId) = await SeedTwoGradesAndSubjectAsync(factory);
+        var vm = new CurriculumViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+        vm.SelectedClass = vm.AllClasses.Single(c => c.Id == class5AId);
+        await vm.ReloadGroupsAsync();
+        Assert.Empty(vm.Groups);
+
+        vm.SelectGradeCommand.Execute(5);
+        vm.BulkApplySubject = vm.AllSubjects.Single(s => s.Id == subjectId);
+        vm.BulkApplyLessonsPerWeek = "5";
+        await vm.BulkApplyCommand.ExecuteAsync(null);
+
+        var reloaded = Assert.Single(vm.Groups);
+        Assert.Equal(5, reloaded.LessonsPerWeek);
+    }
+
+    [Fact]
+    public async Task BulkApply_without_selecting_a_class_reports_a_friendly_error()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var (_, _, _, subjectId) = await SeedTwoGradesAndSubjectAsync(factory);
+        var snackbar = new FakeSnackbarService();
+        var vm = new CurriculumViewModel(factory, snackbar);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        vm.BulkApplySubject = vm.AllSubjects.Single(s => s.Id == subjectId);
+        vm.BulkApplyLessonsPerWeek = "5";
+        await vm.BulkApplyCommand.ExecuteAsync(null);
+
+        Assert.Single(snackbar.Messages);
+        await using var check = factory.CreateDbContext();
+        Assert.Empty(await check.ClassSubjectGroups.ToListAsync());
+    }
+
+    [Fact]
+    public async Task BulkApply_without_selecting_a_subject_reports_a_friendly_error()
+    {
+        using var factory = new SqliteTestContextFactory();
+        await SeedTwoGradesAndSubjectAsync(factory);
+        var snackbar = new FakeSnackbarService();
+        var vm = new CurriculumViewModel(factory, snackbar);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        vm.SelectGradeCommand.Execute(5);
+        vm.BulkApplyLessonsPerWeek = "5";
+        await vm.BulkApplyCommand.ExecuteAsync(null);
+
+        Assert.Single(snackbar.Messages);
     }
 }
