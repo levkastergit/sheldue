@@ -368,4 +368,89 @@ public class CurriculumViewModelTests
 
         Assert.Single(snackbar.Messages);
     }
+
+    [Fact]
+    public async Task Grade_filter_options_list_all_parallels_plus_the_all_option()
+    {
+        using var factory = new SqliteTestContextFactory();
+        await SeedTwoGradesAndSubjectAsync(factory);
+        var vm = new CurriculumViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        Assert.Equal(3, vm.GradeFilterOptions.Count); // "Все параллели" + 5 + 6
+        Assert.Contains(vm.GradeFilterOptions, o => o.Grade is null);
+        Assert.Contains(vm.GradeFilterOptions, o => o.Grade == 5);
+        Assert.Contains(vm.GradeFilterOptions, o => o.Grade == 6);
+        Assert.False(vm.IsGradeFilterActive);
+    }
+
+    [Fact]
+    public async Task Selecting_a_grade_shows_groups_from_every_class_of_that_grade_and_no_others()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var (class5AId, class5BId, class6AId, subjectId) = await SeedTwoGradesAndSubjectAsync(factory);
+        await using (var seed = factory.CreateDbContext())
+        {
+            seed.ClassSubjectGroups.Add(new ClassSubjectGroup { ClassId = class5AId, SubjectId = subjectId, LessonsPerWeek = 5 });
+            seed.ClassSubjectGroups.Add(new ClassSubjectGroup { ClassId = class5BId, SubjectId = subjectId, LessonsPerWeek = 4 });
+            seed.ClassSubjectGroups.Add(new ClassSubjectGroup { ClassId = class6AId, SubjectId = subjectId, LessonsPerWeek = 3 });
+            await seed.SaveChangesAsync();
+        }
+
+        var vm = new CurriculumViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        vm.SelectedGradeFilter = vm.GradeFilterOptions.Single(o => o.Grade == 5);
+        await vm.ReloadGroupsAsync();
+
+        Assert.True(vm.IsGradeFilterActive);
+        Assert.Equal(2, vm.Groups.Count);
+        Assert.Contains(vm.Groups, g => g.ClassId == class5AId);
+        Assert.Contains(vm.Groups, g => g.ClassId == class5BId);
+        Assert.DoesNotContain(vm.Groups, g => g.ClassId == class6AId);
+        // Класс подгружен (для колонки "Класс" в таблице), а не остаётся null.
+        Assert.All(vm.Groups, g => Assert.NotNull(g.Class));
+    }
+
+    [Fact]
+    public async Task Selecting_a_specific_class_exits_grade_filter_mode()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var (_, _, class6AId, _) = await SeedTwoGradesAndSubjectAsync(factory);
+        var vm = new CurriculumViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+        // LoadAsync уже сам выбрал первый класс по умолчанию (5А) — берём заведомо другой класс
+        // (6А), чтобы присваивание SelectedClass ниже реально изменило значение и запустило
+        // OnSelectedClassChanged (сеттер [ObservableProperty] не срабатывает при том же значении).
+
+        vm.SelectedGradeFilter = vm.GradeFilterOptions.Single(o => o.Grade == 5);
+        await vm.ReloadGroupsAsync();
+        Assert.True(vm.IsGradeFilterActive);
+
+        // Сброс SelectedGradeFilter происходит синхронно внутри сеттера SelectedClass (сама
+        // перезагрузка Groups — уже отдельный fire-and-forget, но это здесь не проверяется).
+        vm.SelectedClass = vm.AllClasses.Single(c => c.Id == class6AId);
+
+        Assert.False(vm.IsGradeFilterActive);
+        Assert.Null(vm.SelectedGradeFilter?.Grade);
+    }
+
+    [Fact]
+    public async Task Add_is_blocked_while_grade_filter_is_active()
+    {
+        using var factory = new SqliteTestContextFactory();
+        var snackbar = new FakeSnackbarService();
+        await SeedTwoGradesAndSubjectAsync(factory);
+        var vm = new CurriculumViewModel(factory, snackbar);
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        vm.SelectedGradeFilter = vm.GradeFilterOptions.Single(o => o.Grade == 5);
+        await vm.ReloadGroupsAsync();
+
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Single(snackbar.Messages);
+        await using var check = factory.CreateDbContext();
+        Assert.Empty(await check.ClassSubjectGroups.ToListAsync());
+    }
 }

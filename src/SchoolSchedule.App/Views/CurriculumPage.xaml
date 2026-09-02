@@ -18,8 +18,19 @@
         <DockPanel Grid.Row="0" Margin="0,0,0,20">
             <TextBlock Text="Учебный план" Style="{StaticResource PageTitleStyle}" />
             <Button DockPanel.Dock="Right" HorizontalAlignment="Right"
-                    Style="{StaticResource AppRaisedButton}"
+                    IsEnabled="{Binding IsGradeFilterActive, Converter={StaticResource InverseBoolConverter}}"
                     Command="{Binding AddCommand}">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource AppRaisedButton}">
+                        <Setter Property="ToolTipService.ToolTip" Value="{x:Null}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsGradeFilterActive}" Value="True">
+                                <Setter Property="ToolTipService.ToolTip"
+                                        Value="В режиме «вся параллель» неясно, к какому классу добавлять — выберите конкретный класс, либо используйте «Применить ко многим классам»." />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
                 <StackPanel Orientation="Horizontal">
                     <materialDesign:PackIcon Kind="Plus" Margin="0,0,8,0" />
                     <TextBlock Text="Добавить предмет" />
@@ -106,10 +117,15 @@
 
         <DockPanel Grid.Row="1" Margin="0,0,0,16">
             <TextBlock Text="Класс:" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="Medium" />
-            <ComboBox Width="200" HorizontalAlignment="Left"
+            <ComboBox Width="200" HorizontalAlignment="Left" Margin="0,0,24,0"
                       ItemsSource="{Binding AllClasses}"
                       SelectedItem="{Binding SelectedClass}"
                       DisplayMemberPath="Name" />
+            <TextBlock Text="Параллель:" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="Medium" />
+            <ComboBox Width="180" HorizontalAlignment="Left"
+                      ItemsSource="{Binding GradeFilterOptions}"
+                      SelectedItem="{Binding SelectedGradeFilter}"
+                      DisplayMemberPath="Label" />
         </DockPanel>
 
         <materialDesign:Card Grid.Row="2" Padding="0">
@@ -119,6 +135,7 @@
                       CanUserDeleteRows="False"
                       RowEditEnding="DataGrid_OnRowEditEnding">
                 <DataGrid.Columns>
+                    <DataGridTextColumn Header="Класс" Binding="{Binding Class.Name}" IsReadOnly="True" Width="1*" MinWidth="70" />
                     <DataGridTemplateColumn Header="Предмет" Width="2.5*">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>

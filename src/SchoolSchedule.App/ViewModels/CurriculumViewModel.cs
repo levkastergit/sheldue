@@ -27,6 +27,15 @@ public partial class CurriculumViewModel : ObservableObject
     [ObservableProperty]
     private SchoolClass? _selectedClass;
 
+    /// <summary>"Все параллели" (обычный просмотр по SelectedClass) либо конкретная параллель —
+    /// тогда таблица показывает сразу все классы этой параллели.</summary>
+    public ObservableCollection<GradeFilterOption> GradeFilterOptions { get; } = [];
+
+    [ObservableProperty]
+    private GradeFilterOption? _selectedGradeFilter;
+
+    public bool IsGradeFilterActive => SelectedGradeFilter?.Grade is not null;
+
     // --- "Применить ко многим классам сразу" ---
     public ObservableCollection<ClassSelection> BulkApplyClassSelections { get; } = [];
     public ObservableCollection<int> BulkApplyGrades { get; } = [];
@@ -71,6 +80,13 @@ public partial class CurriculumViewModel : ObservableObject
             BulkApplyGrades.Add(grade);
         RebuildBulkApplyClassSelections();
 
+        var previousGradeSelection = SelectedGradeFilter?.Grade;
+        GradeFilterOptions.Clear();
+        GradeFilterOptions.Add(new GradeFilterOption(null, "Все параллели"));
+        foreach (var grade in BulkApplyGrades)
+            GradeFilterOptions.Add(new GradeFilterOption(grade, $"{grade} класс"));
+        SelectedGradeFilter = GradeFilterOptions.FirstOrDefault(o => o.Grade == previousGradeSelection) ?? GradeFilterOptions[0];
+
         SelectedClass ??= AllClasses.FirstOrDefault();
         await ReloadGroupsAsync();
     }
@@ -82,17 +98,48 @@ public partial class CurriculumViewModel : ObservableObject
             BulkApplyClassSelections.Add(new ClassSelection(schoolClass, false));
     }
 
-    partial void OnSelectedClassChanged(SchoolClass? value) => _ = ReloadGroupsAsync();
+    partial void OnSelectedClassChanged(SchoolClass? value)
+    {
+        // Выбор конкретного класса — это выход из режима "вся параллель": иначе было бы неясно,
+        // что сейчас показывает таблица.
+        if (IsGradeFilterActive)
+            SelectedGradeFilter = GradeFilterOptions.FirstOrDefault(o => o.Grade is null);
+        else
+            _ = ReloadGroupsAsync();
+    }
+
+    partial void OnSelectedGradeFilterChanged(GradeFilterOption? value)
+    {
+        OnPropertyChanged(nameof(IsGradeFilterActive));
+        _ = ReloadGroupsAsync();
+    }
 
     /// <summary>internal — чтобы тесты могли детерминированно дождаться перезагрузки при смене класса,
     /// не полагаясь на fire-and-forget вызов из OnSelectedClassChanged (см. TeachersViewModel).</summary>
     internal async Task ReloadGroupsAsync()
     {
         Groups.Clear();
-        if (_context is null || SelectedClass is null) return;
+        if (_context is null) return;
+
+        if (SelectedGradeFilter?.Grade is { } grade)
+        {
+            // Вся параллель сразу — строки всех её классов в одной таблице (с колонкой "Класс").
+            var gradeGroups = await _context.ClassSubjectGroups
+                .Include(g => g.Subject)
+                .Include(g => g.Class)
+                .Where(g => g.Class.Grade == grade)
+                .OrderBy(g => g.Class.Name).ThenBy(g => g.Subject.Name).ThenBy(g => g.GroupLabel)
+                .ToListAsync();
+            foreach (var group in gradeGroups)
+                Groups.Add(group);
+            return;
+        }
+
+        if (SelectedClass is null) return;
 
         var groups = await _context.ClassSubjectGroups
             .Include(g => g.Subject)
+            .Include(g => g.Class)
             .Where(g => g.ClassId == SelectedClass.Id)
             .OrderBy(g => g.Subject.Name).ThenBy(g => g.GroupLabel)
             .ToListAsync();
@@ -103,6 +150,11 @@ public partial class CurriculumViewModel : ObservableObject
     [RelayCommand]
     private async Task AddAsync()
     {
+        if (IsGradeFilterActive)
+        {
+            _snackbar.Show("В режиме «вся параллель» неясно, к какому классу добавлять — выберите конкретный класс, либо используйте «Применить ко многим классам»");
+            return;
+        }
         if (_context is null || SelectedClass is null)
         {
             _snackbar.Show("Сначала выберите класс");

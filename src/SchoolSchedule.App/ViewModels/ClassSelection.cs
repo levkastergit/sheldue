@@ -14,3 +14,11 @@ public partial class ClassSelection(SchoolClass schoolClass, bool isSelected) : 
     [ObservableProperty]
     private bool _isSelected = isSelected;
 }
+
+/// <summary>Один пункт фильтра "показать целиком эту параллель" на странице "Учебный план" —
+/// Grade == null означает "все параллели" (обычный просмотр по одному выбранному классу).</summary>
+public class GradeFilterOption(int? grade, string label)
+{
+    public int? Grade { get; } = grade;
+    public string Label { get; } = label;
+}
