@@ -144,8 +144,10 @@ public class ScheduleSolverTests
     }
 
     [Fact]
-    public void Room_pinned_to_a_teacher_is_not_used_by_a_different_teacher()
+    public void Room_pinned_to_a_teacher_is_preferred_by_that_teacher_over_an_open_room()
     {
+        // Закрепление — это приоритет, не запрет: если у "чужого" учителя есть выбор между
+        // закреплённым за кем-то другим кабинетом и открытым, солвер должен предпочесть открытый.
         var classA = new SchoolClass { Id = 1, Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
         var subject = new Subject { Id = 1, Name = "Информатика" };
         var pinnedTeacher = new Teacher { Id = 1, FullName = "Закреплённый" };
@@ -169,6 +171,36 @@ public class ScheduleSolverTests
 
         Assert.Equal(ScheduleGenerationStatus.Success, result.Status);
         Assert.All(result.Lessons, l => Assert.Equal(openRoom.Id, l.RoomId));
+    }
+
+    [Fact]
+    public void Room_pinned_to_a_teacher_can_still_be_used_by_another_teacher_when_it_is_the_only_option()
+    {
+        // Закрепление не должно ломать расстановку, если закреплённый кабинет — единственный
+        // подходящий по типу: приоритет уступает возможности вообще построить расписание.
+        var classA = new SchoolClass { Id = 1, Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+        var subject = new Subject { Id = 1, Name = "Информатика" };
+        var pinnedTeacher = new Teacher { Id = 1, FullName = "Закреплённый" };
+        var otherTeacher = new Teacher { Id = 2, FullName = "Другой" };
+        var ordinary = OrdinaryType();
+
+        var pinnedRoom = MakeRoom(1, ordinary, pinnedTeacher); // закреплён только за pinnedTeacher — но других кабинетов нет вовсе
+
+        var settings = new ScheduleSettings { DaysPerWeek = 5, PeriodsPerDayShift1 = 6 };
+        var input = new ScheduleInput
+        {
+            Rooms = [pinnedRoom],
+            TimeSlots = GenerateSlotsWithIds(settings),
+            Groups = [MakeGroup(1, classA, subject, otherTeacher, 2)],
+            Unavailabilities = [],
+            TimeLimit = ShortLimit,
+        };
+
+        var result = new ScheduleSolver().Generate(input);
+
+        Assert.Equal(ScheduleGenerationStatus.Success, result.Status);
+        Assert.Equal(2, result.Lessons.Count);
+        Assert.All(result.Lessons, l => Assert.Equal(pinnedRoom.Id, l.RoomId));
     }
 
     [Fact]

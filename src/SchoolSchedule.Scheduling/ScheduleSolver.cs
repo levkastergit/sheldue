@@ -8,19 +8,22 @@ namespace SchoolSchedule.Scheduling;
 /// Строит базовое недельное расписание (constraint satisfaction через CP-SAT). Для каждой строки
 /// учебного плана (класс+предмет[+подгруппа]) с назначенным учителем — LessonsPerWeek занятий,
 /// каждое выбирает урочный слот и кабинет так, чтобы:
-///   - учитель/кабинет/класс не были заняты дважды в один слот;
-///   - слот принадлежал смене класса;
-///   - кабинет подходил по типу предмету (если задан) и по закреплению за учителем (если кабинет
-///     закреплён хоть за кем-то — только за закреплёнными учителями);
-///   - слот не попадал в окно недоступности учителя.
+///   - учитель/кабинет/класс не были заняты дважды в один слот (жёсткое);
+///   - слот принадлежал смене класса (жёсткое);
+///   - кабинет подходил по типу предмету, если задан (жёсткое);
+///   - слот не попадал в окно недоступности учителя (жёсткое);
+///   - кабинет, закреплённый за учителем(-ями), по возможности используется именно ими — но это
+///     ПРИОРИТЕТ, а не запрет: если так эффективнее (или иначе расписание не сходится), в
+///     закреплённый кабинет всё равно может встать урок другого учителя (мягкое — минимизируется
+///     число таких "нарушений" через objective функцию, но полностью не запрещается).
 /// Подгруппы одного предмета одного класса (несколько строк с разным GroupLabel) встают в один и
 /// тот же слот (учатся параллельно), но с разными учителями/кабинетами — как и требуется на деле
 /// (иностранный язык, информатика и т.п.).
 ///
-/// Мягкие ограничения (минимизация "окон", равномерное распределение по неделе) сюда сознательно
-/// не входят — это чистая задача выполнимости первым найденным решением, что для типовой школьной
-/// нагрузки обычно решается почти мгновенно. Если у школы данных достаточно, чтобы решение вообще
-/// существовало, добавить "мягкую" оптимизацию поверх несложно вторым шагом.
+/// Остальные мягкие ограничения (минимизация "окон", равномерное распределение по неделе) сюда
+/// сознательно не входят — модель ищет решение с минимумом нарушений закрепления кабинетов, а
+/// если закреплений нет вовсе, откатывается к чистой задаче выполнимости первым найденным
+/// решением (без objective), что для типовой школьной нагрузки обычно решается почти мгновенно.
 /// </summary>
 public class ScheduleSolver
 {
@@ -71,11 +74,24 @@ public class ScheduleSolver
             return byShift.Where(i => !blocked.Contains((timeSlots[i].Day, timeSlots[i].PeriodNumber))).ToArray();
         }
 
+        // Закрепление кабинета за учителем — это приоритет, а не запрет: кабинет остаётся годным
+        // по типу для любого учителя, кто мог бы там вести, просто закреплённые учителя
+        // предпочитаются (см. NonPreferredRoomsFor + минимизация нарушений ниже).
         int[] AllowedRoomsFor(Subject subject, int teacherId)
         {
             return rooms
                 .Where(r => subject.RequiredRoomTypeId is null || r.RoomTypeId == subject.RequiredRoomTypeId)
-                .Where(r => r.AssignedTeachers.Count == 0 || r.AssignedTeachers.Any(a => a.TeacherId == teacherId))
+                .Select(r => roomIndexById[r.Id])
+                .ToArray();
+        }
+
+        // Из кабинетов, годных по типу, — те, что закреплены за кем-то другим (не за teacherId).
+        // Использование такого кабинета этим учителем — не запрещено, но штрафуется в objective.
+        int[] NonPreferredRoomsFor(Subject subject, int teacherId)
+        {
+            return rooms
+                .Where(r => subject.RequiredRoomTypeId is null || r.RoomTypeId == subject.RequiredRoomTypeId)
+                .Where(r => r.AssignedTeachers.Count > 0 && r.AssignedTeachers.All(a => a.TeacherId != teacherId))
                 .Select(r => roomIndexById[r.Id])
                 .ToArray();
         }
@@ -113,6 +129,7 @@ public class ScheduleSolver
 
         var teacherSlotSets = new Dictionary<int, HashSet<IntVar>>();
         var classSlotSets = new Dictionary<int, HashSet<IntVar>>();
+        var pinningViolations = new List<IntVar>();
 
         void AddTeacherSlot(int teacherId, IntVar v)
         {
@@ -128,9 +145,10 @@ public class ScheduleSolver
             set.Add(v);
         }
 
-        void RegisterOccurrence(ClassSubjectGroup g, IntVar slotVar, IntVar roomVar)
+        void RegisterOccurrence(ClassSubjectGroup g, IntVar slotVar, IntVar roomVar, int[] allowedRooms)
         {
-            var roomSlotVar = model.NewIntVar(0, (long)rooms.Count * numSlots - 1, $"rs_{g.Id}_{occGroupId.Count}");
+            var occIndex = occGroupId.Count;
+            var roomSlotVar = model.NewIntVar(0, (long)rooms.Count * numSlots - 1, $"rs_{g.Id}_{occIndex}");
             model.Add(roomSlotVar == (roomVar * numSlots) + slotVar);
 
             occGroupId.Add(g.Id);
@@ -141,6 +159,21 @@ public class ScheduleSolver
 
             AddTeacherSlot(g.TeacherId.Value, slotVar);
             AddClassSlot(g.ClassId, slotVar);
+
+            // Закрепление кабинета — приоритет, не запрет: если среди годных по типу кабинетов
+            // есть закреплённые за ДРУГИМИ учителями, заведи булеву переменную "нарушил
+            // закрепление" и минимизируй сумму таких нарушений в objective — solver предпочтёт
+            // не закреплённые (или закреплённые именно за этим учителем) кабинеты там, где это
+            // возможно, но не откажется от закреплённого, если другого выхода нет.
+            var nonPreferred = NonPreferredRoomsFor(g.Subject, g.TeacherId.Value);
+            if (nonPreferred.Length > 0)
+            {
+                var preferred = allowedRooms.Except(nonPreferred).ToArray();
+                var violatesPinning = model.NewBoolVar($"vp_{g.Id}_{occIndex}");
+                model.AddLinearExpressionInDomain(roomVar, ToDomain(nonPreferred)).OnlyEnforceIf(violatesPinning);
+                model.AddLinearExpressionInDomain(roomVar, ToDomain(preferred)).OnlyEnforceIf(violatesPinning.Not());
+                pinningViolations.Add(violatesPinning);
+            }
         }
 
         foreach (var block in eligible.GroupBy(g => (g.ClassId, g.SubjectId)))
@@ -162,7 +195,7 @@ public class ScheduleSolver
                 }
                 if (allowedRooms.Length == 0)
                 {
-                    warnings.Add(DescribeGroup(g) + ": нет подходящего кабинета (тип кабинета или закрепление за учителем) — урок не включён.");
+                    warnings.Add(DescribeGroup(g) + ": нет ни одного кабинета подходящего типа — урок не включён.");
                     continue;
                 }
 
@@ -170,7 +203,7 @@ public class ScheduleSolver
                 {
                     var slotVar = model.NewIntVarFromDomain(ToDomain(allowedSlots), $"s_{g.Id}_{occ}");
                     var roomVar = model.NewIntVarFromDomain(ToDomain(allowedRooms), $"r_{g.Id}_{occ}");
-                    RegisterOccurrence(g, slotVar, roomVar);
+                    RegisterOccurrence(g, slotVar, roomVar, allowedRooms);
                 }
             }
             else
@@ -208,7 +241,7 @@ public class ScheduleSolver
                         foreach (var r in rows)
                         {
                             var roomVar = model.NewIntVarFromDomain(ToDomain(perRowAllowedRooms[r.Id]), $"r_{r.Id}_{occ}");
-                            RegisterOccurrence(r, sharedSlotVar, roomVar);
+                            RegisterOccurrence(r, sharedSlotVar, roomVar, perRowAllowedRooms[r.Id]);
                         }
                     }
                 }
@@ -226,7 +259,7 @@ public class ScheduleSolver
                     {
                         var slotVar = model.NewIntVarFromDomain(ToDomain(allowedSlots), $"s_{r.Id}_{occ}");
                         var roomVar = model.NewIntVarFromDomain(ToDomain(perRowAllowedRooms[r.Id]), $"r_{r.Id}_{occ}");
-                        RegisterOccurrence(r, slotVar, roomVar);
+                        RegisterOccurrence(r, slotVar, roomVar, perRowAllowedRooms[r.Id]);
                     }
                 }
             }
@@ -247,6 +280,12 @@ public class ScheduleSolver
         foreach (var set in classSlotSets.Values.Where(s => s.Count > 1))
             model.AddAllDifferent(set);
         model.AddAllDifferent(roomSlotVars);
+
+        // Если в школе вообще есть закреплённые кабинеты — ищем решение с минимумом нарушений
+        // закрепления (мягкий приоритет). Если закреплений нет, objective не добавляется — модель
+        // остаётся чистой задачей выполнимости и решается первым найденным решением (быстрее).
+        if (pinningViolations.Count > 0)
+            model.Minimize(LinearExpr.Sum(pinningViolations));
 
         var solver = new CpSolver
         {

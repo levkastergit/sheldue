@@ -28,6 +28,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -59,8 +60,26 @@
             </StackPanel>
         </materialDesign:Card>
 
+        <!-- Правила генерации -->
+        <materialDesign:Card Grid.Row="2" Padding="0" Margin="0,0,0,16">
+            <Expander Header="Правила, по которым строится расписание">
+                <StackPanel Margin="20,0,20,16">
+                    <ItemsControl ItemsSource="{Binding GenerationRules}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,4,0,0">
+                                    <TextBlock DockPanel.Dock="Left" Text="•" Margin="0,0,8,0" FontWeight="Bold" Opacity="0.6" />
+                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" Opacity="0.85" />
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Expander>
+        </materialDesign:Card>
+
         <!-- Генерация -->
-        <materialDesign:Card Grid.Row="2" Padding="20" Margin="0,0,0,16">
+        <materialDesign:Card Grid.Row="3" Padding="20" Margin="0,0,0,16">
             <StackPanel>
                 <DockPanel>
                     <Button DockPanel.Dock="Left" Style="{StaticResource AppRaisedButton}"
@@ -102,7 +121,7 @@
         </materialDesign:Card>
 
         <!-- Переключатель вида -->
-        <DockPanel Grid.Row="3" Margin="0,0,0,12">
+        <DockPanel Grid.Row="4" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                 <RadioButton Content="По классам" GroupName="ScheduleView" Margin="0,0,20,0" VerticalAlignment="Center"
                              IsChecked="{Binding ViewMode, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=ByClass}" />
@@ -119,11 +138,16 @@
                           Visibility="{Binding IsByTeacherView, Converter={StaticResource BoolToVisibilityConverter}}"
                           ItemsSource="{Binding AllTeachers}" DisplayMemberPath="FullName"
                           SelectedItem="{Binding SelectedTeacherForView}" />
+
+                <TextBlock Text="День:" VerticalAlignment="Center" Margin="20,0,10,0" Opacity="0.7" />
+                <ComboBox Width="160"
+                          ItemsSource="{Binding DayFilterOptions}" DisplayMemberPath="Label"
+                          SelectedItem="{Binding SelectedDayFilter}" />
             </StackPanel>
         </DockPanel>
 
         <!-- Сетка -->
-        <materialDesign:Card Grid.Row="4" Padding="16">
+        <materialDesign:Card Grid.Row="5" Padding="16">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />

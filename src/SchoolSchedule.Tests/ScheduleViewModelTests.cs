@@ -155,6 +155,39 @@ public class ScheduleViewModelTests
     }
 
     [Fact]
+    public async Task Selecting_a_specific_day_filters_all_views_to_that_day_only()
+    {
+        using var factory = new SqliteTestContextFactory();
+        await SeedSchedulableCurriculumAsync(factory);
+
+        var vm = new ScheduleViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+        await vm.GenerateCommand.ExecuteAsync(null);
+        Assert.True(vm.HasGeneratedSchedule);
+
+        // По умолчанию — "Все дни": полный набор дней в шапке и в каждой строке.
+        Assert.Equal(vm.DaysPerWeek, vm.DayHeaders.Length);
+        Assert.All(vm.GridRows, row => Assert.Equal(vm.DaysPerWeek, row.Days.Count));
+
+        var tuesday = vm.DayFilterOptions.Single(o => o.Day == SchoolDay.Вторник);
+        vm.SelectedDayFilter = tuesday;
+
+        Assert.Single(vm.DayHeaders);
+        Assert.Equal("Вт", vm.DayHeaders[0]);
+        Assert.All(vm.GridRows, row => Assert.Single(row.Days));
+
+        vm.ViewMode = ScheduleViewMode.Overview;
+        Assert.NotEmpty(vm.OverviewRows);
+        Assert.All(vm.OverviewRows, row => Assert.StartsWith("Вт", row.RowLabel));
+
+        // Возврат к "Все дни" восстанавливает полную сетку.
+        vm.SelectedDayFilter = vm.DayFilterOptions.Single(o => o.Day is null);
+        vm.ViewMode = ScheduleViewMode.ByClass;
+        Assert.Equal(vm.DaysPerWeek, vm.DayHeaders.Length);
+        Assert.All(vm.GridRows, row => Assert.Equal(vm.DaysPerWeek, row.Days.Count));
+    }
+
+    [Fact]
     public async Task Generate_without_any_teacher_assignment_reports_a_friendly_warning_and_no_data_status()
     {
         using var factory = new SqliteTestContextFactory();

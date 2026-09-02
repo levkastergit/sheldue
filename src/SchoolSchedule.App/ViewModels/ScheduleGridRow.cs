@@ -1,3 +1,5 @@
+using SchoolSchedule.Core.Models;
+
 namespace SchoolSchedule.App.ViewModels;
 
 /// <summary>Одна ячейка недельной сетки расписания — урок или пусто (SubjectName == null).</summary>
@@ -29,6 +31,13 @@ public class OverviewGridRow(string rowLabel)
     public string RowLabel { get; } = rowLabel;
 
     public List<ScheduleCell> ClassCells { get; } = [];
+}
+
+/// <summary>Один пункт фильтра "показать только этот день" — Day == null означает "все дни".</summary>
+public class DayFilterOption(SchoolDay? day, string label)
+{
+    public SchoolDay? Day { get; } = day;
+    public string Label { get; } = label;
 }
 
 /// <summary>Какой срез недельного расписания сейчас отображается на вкладке.</summary>

@@ -30,6 +30,7 @@ public partial class ScheduleViewModel : ObservableObject
     public ObservableCollection<ScheduleGridRow> GridRows { get; } = [];
     public ObservableCollection<OverviewGridRow> OverviewRows { get; } = [];
     public ObservableCollection<string> Warnings { get; } = [];
+    public ObservableCollection<DayFilterOption> DayFilterOptions { get; } = [];
 
     [ObservableProperty]
     private string[] _dayHeaders = [];
@@ -60,6 +61,9 @@ public partial class ScheduleViewModel : ObservableObject
     private Teacher? _selectedTeacherForView;
 
     [ObservableProperty]
+    private DayFilterOption? _selectedDayFilter;
+
+    [ObservableProperty]
     private bool _isGenerating;
 
     [ObservableProperty]
@@ -70,6 +74,22 @@ public partial class ScheduleViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _hasGeneratedSchedule;
+
+    /// <summary>Правила, по которым CP-SAT солвер (SchoolSchedule.Scheduling.ScheduleSolver)
+    /// строит расписание — показываются пользователю как есть, без отдельных настроек на
+    /// включение/выключение (это не опции, а то, как всегда работает генератор).</summary>
+    public IReadOnlyList<string> GenerationRules { get; } =
+    [
+        "Один учитель не ведёт два урока одновременно.",
+        "Один кабинет не занят двумя уроками одновременно.",
+        "Один класс не имеет два урока одновременно.",
+        "Урок ставится только в урочный слот той смены, в которую учится класс.",
+        "Если у предмета указан требуемый тип кабинета (страница «Предметы») — урок ставится только в кабинет этого типа.",
+        "Если кабинет закреплён за учителем (страница «Кабинеты») — ему отдаётся приоритет для закреплённых учителей, но при необходимости в нём могут вести уроки и другие учителя.",
+        "Учитывается недоступность учителя — окна в расписании, заданные на странице «Учителя».",
+        "Если предмет разбит на подгруппы у одного класса — все подгруппы встают в один и тот же урочный слот (учатся параллельно), но с разными учителями и кабинетами.",
+        "Строка учебного плана без назначенного учителя (страница «Назначения») в расписание не попадает — вместо этого выводится предупреждение после генерации.",
+    ];
 
     public ScheduleViewModel(IDbContextFactory<SchoolScheduleDbContext> contextFactory, ISnackbarService snackbar)
     {
@@ -132,8 +152,22 @@ public partial class ScheduleViewModel : ObservableObject
 
         HasGeneratedSchedule = _lessons.Count > 0;
 
-        RebuildDayHeaders();
+        RebuildDayFilterOptions();
         RebuildGrid();
+    }
+
+    /// <summary>Пересобирает список пунктов фильтра по дню под текущее DaysPerWeek, сохраняя
+    /// выбор пользователя, если выбранный день всё ещё существует в сетке.</summary>
+    private void RebuildDayFilterOptions()
+    {
+        var previousSelection = SelectedDayFilter?.Day;
+
+        DayFilterOptions.Clear();
+        DayFilterOptions.Add(new DayFilterOption(null, "Все дни"));
+        for (var d = 1; d <= _settings.DaysPerWeek; d++)
+            DayFilterOptions.Add(new DayFilterOption((SchoolDay)d, ((SchoolDay)d).ToString()));
+
+        SelectedDayFilter = DayFilterOptions.FirstOrDefault(o => o.Day == previousSelection) ?? DayFilterOptions[0];
     }
 
     partial void OnViewModeChanged(ScheduleViewMode value)
@@ -146,6 +180,7 @@ public partial class ScheduleViewModel : ObservableObject
 
     partial void OnSelectedClassForViewChanged(SchoolClass? value) => RebuildGrid();
     partial void OnSelectedTeacherForViewChanged(Teacher? value) => RebuildGrid();
+    partial void OnSelectedDayFilterChanged(DayFilterOption? value) => RebuildGrid();
 
     [RelayCommand]
     private async Task SaveSettingsAsync()
@@ -257,13 +292,20 @@ public partial class ScheduleViewModel : ObservableObject
 
     private static readonly string[] DayShortNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
-    private void RebuildDayHeaders() => DayHeaders = DayShortNames.Take(Math.Max(_settings.DaysPerWeek, 1)).ToArray();
+    /// <summary>Дни недели с учётом фильтра "показать только этот день" (SelectedDayFilter).</summary>
+    private List<SchoolDay> GetVisibleDays()
+    {
+        var all = Enumerable.Range(1, _settings.DaysPerWeek).Select(d => (SchoolDay)d);
+        return SelectedDayFilter?.Day is { } day ? all.Where(d => d == day).ToList() : all.ToList();
+    }
 
     private void RebuildGrid()
     {
         GridRows.Clear();
         OverviewRows.Clear();
         if (_settings.DaysPerWeek <= 0) return;
+
+        DayHeaders = GetVisibleDays().Select(d => DayShortNames[(int)d - 1]).ToArray();
 
         switch (ViewMode)
         {
@@ -284,7 +326,7 @@ public partial class ScheduleViewModel : ObservableObject
         var cls = SelectedClassForView;
         if (cls is null) return;
 
-        var days = Enumerable.Range(1, _settings.DaysPerWeek).Select(d => (SchoolDay)d).ToList();
+        var days = GetVisibleDays();
         var shiftSlots = _timeSlots.Where(t => t.Shift == cls.Shift).ToList();
         var periods = shiftSlots.Select(t => t.PeriodNumber).Distinct().OrderBy(p => p).ToList();
         var classLessons = _lessons.Where(l => l.ClassSubjectGroup.ClassId == cls.Id).ToList();
@@ -307,7 +349,7 @@ public partial class ScheduleViewModel : ObservableObject
         var teacher = SelectedTeacherForView;
         if (teacher is null) return;
 
-        var days = Enumerable.Range(1, _settings.DaysPerWeek).Select(d => (SchoolDay)d).ToList();
+        var days = GetVisibleDays();
         var teacherLessons = _lessons.Where(l => l.TeacherId == teacher.Id).ToList();
         var relevantShifts = teacherLessons.Select(l => l.TimeSlot.Shift).Distinct().ToList();
         if (relevantShifts.Count == 0)
@@ -340,7 +382,10 @@ public partial class ScheduleViewModel : ObservableObject
     {
         if (AllClasses.Count == 0) return;
 
-        var rows = _timeSlots
+        var slotsForDay = SelectedDayFilter?.Day is { } filterDay
+            ? _timeSlots.Where(t => t.Day == filterDay)
+            : _timeSlots;
+        var rows = slotsForDay
             .Select(t => (t.Day, t.Shift, t.PeriodNumber))
             .Distinct()
             .OrderBy(r => r.Day).ThenBy(r => r.Shift).ThenBy(r => r.PeriodNumber)
