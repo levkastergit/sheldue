@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SchoolSchedule.Data;
 
@@ -10,9 +11,11 @@ using SchoolSchedule.Data;
 namespace SchoolSchedule.Data.Migrations
 {
     [DbContext(typeof(SchoolScheduleDbContext))]
-    partial class SchoolScheduleDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260902040127_AddMaxLessonsPerDayAndPairedLessons")]
+    partial class AddMaxLessonsPerDayAndPairedLessons
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.10");

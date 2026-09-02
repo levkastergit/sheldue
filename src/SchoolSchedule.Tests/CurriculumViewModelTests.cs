@@ -56,6 +56,45 @@ public class CurriculumViewModelTests
     }
 
     [Fact]
+    public async Task New_row_defaults_to_at_most_one_lesson_per_day_and_no_pairing()
+    {
+        using var factory = new SqliteTestContextFactory();
+        await SeedClassAndSubjectAsync(factory);
+        var vm = new CurriculumViewModel(factory, new FakeSnackbarService());
+        await vm.LoadCommand.ExecuteAsync(null);
+
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var group = Assert.Single(vm.Groups);
+        Assert.Equal(1, group.MaxLessonsPerDay);
+        Assert.False(group.PairedLessons);
+    }
+
+    [Fact]
+    public async Task Max_lessons_per_day_and_paired_lessons_round_trip()
+    {
+        using var factory = new SqliteTestContextFactory();
+        await SeedClassAndSubjectAsync(factory);
+        var snackbar = new FakeSnackbarService();
+
+        var vm = new CurriculumViewModel(factory, snackbar);
+        await vm.LoadCommand.ExecuteAsync(null);
+        await vm.AddCommand.ExecuteAsync(null);
+
+        var group = Assert.Single(vm.Groups);
+        group.LessonsPerWeek = 4;
+        group.MaxLessonsPerDay = 2;
+        group.PairedLessons = true;
+        await vm.SaveGroupCommand.ExecuteAsync(group);
+
+        var vm2 = new CurriculumViewModel(factory, snackbar);
+        await vm2.LoadCommand.ExecuteAsync(null);
+        var reloaded = Assert.Single(vm2.Groups);
+        Assert.Equal(2, reloaded.MaxLessonsPerDay);
+        Assert.True(reloaded.PairedLessons);
+    }
+
+    [Fact]
     public async Task Adding_a_second_time_picks_a_different_not_yet_used_subject()
     {
         // Раньше "Добавить" всегда подставлял первый по алфавиту предмет, поэтому вторая

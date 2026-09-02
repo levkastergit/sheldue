@@ -15,7 +15,12 @@ namespace SchoolSchedule.Scheduling;
 ///   - кабинет, закреплённый за учителем(-ями), по возможности используется именно ими — но это
 ///     ПРИОРИТЕТ, а не запрет: если так эффективнее (или иначе расписание не сходится), в
 ///     закреплённый кабинет всё равно может встать урок другого учителя (мягкое — минимизируется
-///     число таких "нарушений" через objective функцию, но полностью не запрещается).
+///     число таких "нарушений" через objective функцию, но полностью не запрещается);
+///   - для строки учебного плана не больше ClassSubjectGroup.MaxLessonsPerDay её уроков в один
+///     день (по умолчанию 1 — не больше одного в день; жёсткое);
+///   - если у строки включено ClassSubjectGroup.PairedLessons и в какой-то день всё же встали два
+///     её урока — они обязаны идти подряд, без окна между ними (жёсткое, действует только при
+///     MaxLessonsPerDay больше 1).
 /// Подгруппы одного предмета одного класса (несколько строк с разным GroupLabel) встают в один и
 /// тот же слот (учатся параллельно), но с разными учителями/кабинетами — как и требуется на деле
 /// (иностранный язык, информатика и т.п.).
@@ -58,6 +63,13 @@ public class ScheduleSolver
             .Select((s, i) => (s, i))
             .GroupBy(t => t.s.Shift)
             .ToDictionary(g => g.Key, g => g.Select(t => t.i).ToArray());
+
+        // Таблицы для CP-SAT AddElement: по индексу слота — день/номер урока. Нужны для
+        // ограничений "не больше N уроков этой строки в день" и "парные уроки — подряд".
+        var slotToDay = timeSlots.Select(t => (long)(int)t.Day).ToArray();
+        var slotToPeriod = timeSlots.Select(t => (long)t.PeriodNumber).ToArray();
+        var distinctDays = timeSlots.Select(t => (int)t.Day).Distinct().ToArray();
+        var maxPeriodNumber = (int)timeSlots.Max(t => t.PeriodNumber);
 
         var rooms = input.Rooms;
         var roomIndexById = rooms.Select((r, i) => (r, i)).ToDictionary(t => t.r.Id, t => t.i);
@@ -131,6 +143,11 @@ public class ScheduleSolver
         var classSlotSets = new Dictionary<int, HashSet<IntVar>>();
         var pinningViolations = new List<IntVar>();
 
+        // Все occurrence-слоты одной строки учебного плана (ClassSubjectGroup.Id) — в т.ч. те,
+        // что физически являются общей переменной с подгруппой-соседом (см. RegisterOccurrence)
+        // — нужны отдельно на группу, чтобы применить её собственные MaxLessonsPerDay/PairedLessons.
+        var groupOccurrenceSlots = new Dictionary<int, List<IntVar>>();
+
         void AddTeacherSlot(int teacherId, IntVar v)
         {
             if (!teacherSlotSets.TryGetValue(teacherId, out var set))
@@ -160,6 +177,10 @@ public class ScheduleSolver
             AddTeacherSlot(g.TeacherId.Value, slotVar);
             AddClassSlot(g.ClassId, slotVar);
 
+            if (!groupOccurrenceSlots.TryGetValue(g.Id, out var ownSlots))
+                groupOccurrenceSlots[g.Id] = ownSlots = [];
+            ownSlots.Add(slotVar);
+
             // Закрепление кабинета — приоритет, не запрет: если среди годных по типу кабинетов
             // есть закреплённые за ДРУГИМИ учителями, заведи булеву переменную "нарушил
             // закрепление" и минимизируй сумму таких нарушений в objective — solver предпочтёт
@@ -173,6 +194,70 @@ public class ScheduleSolver
                 model.AddLinearExpressionInDomain(roomVar, ToDomain(nonPreferred)).OnlyEnforceIf(violatesPinning);
                 model.AddLinearExpressionInDomain(roomVar, ToDomain(preferred)).OnlyEnforceIf(violatesPinning.Not());
                 pinningViolations.Add(violatesPinning);
+            }
+        }
+
+        // Ограничивает, сколько occurrence-слотов ОДНОЙ строки учебного плана может попасть на один
+        // день (MaxLessonsPerDay), и, если включено PairedLessons, требует, чтобы любые два её
+        // урока в один день шли подряд (без окна между ними — "сдвоенный" урок).
+        void ApplyDayLimitAndPairing(ClassSubjectGroup g, List<IntVar> occSlots)
+        {
+            if (occSlots.Count <= 1) return;
+
+            var needsDayLimit = g.MaxLessonsPerDay < occSlots.Count;
+            var needsPairing = g.PairedLessons && g.MaxLessonsPerDay >= 2;
+            if (!needsDayLimit && !needsPairing) return;
+
+            var dayVars = new List<IntVar>();
+            var periodVars = new List<IntVar>();
+            for (var i = 0; i < occSlots.Count; i++)
+            {
+                var dayVar = model.NewIntVar(1, 6, $"day_{g.Id}_{i}");
+                model.AddElement(occSlots[i], slotToDay, dayVar);
+                dayVars.Add(dayVar);
+
+                if (needsPairing)
+                {
+                    var periodVar = model.NewIntVar(1, maxPeriodNumber, $"per_{g.Id}_{i}");
+                    model.AddElement(occSlots[i], slotToPeriod, periodVar);
+                    periodVars.Add(periodVar);
+                }
+            }
+
+            if (needsDayLimit)
+            {
+                foreach (var day in distinctDays)
+                {
+                    var indicators = new List<IntVar>();
+                    for (var i = 0; i < occSlots.Count; i++)
+                    {
+                        var isOnDay = model.NewBoolVar($"dind_{g.Id}_{i}_{day}");
+                        model.Add(dayVars[i] == day).OnlyEnforceIf(isOnDay);
+                        model.Add(dayVars[i] != day).OnlyEnforceIf(isOnDay.Not());
+                        indicators.Add(isOnDay);
+                    }
+                    model.Add(LinearExpr.Sum(indicators) <= g.MaxLessonsPerDay);
+                }
+            }
+
+            if (needsPairing)
+            {
+                for (var i = 0; i < occSlots.Count; i++)
+                {
+                    for (var j = i + 1; j < occSlots.Count; j++)
+                    {
+                        var sameDay = model.NewBoolVar($"sd_{g.Id}_{i}_{j}");
+                        model.Add(dayVars[i] == dayVars[j]).OnlyEnforceIf(sameDay);
+                        model.Add(dayVars[i] != dayVars[j]).OnlyEnforceIf(sameDay.Not());
+
+                        var diff = model.NewIntVar(-maxPeriodNumber, maxPeriodNumber, $"diff_{g.Id}_{i}_{j}");
+                        model.Add(diff == periodVars[i] - periodVars[j]);
+                        var absDiff = model.NewIntVar(0, maxPeriodNumber, $"absdiff_{g.Id}_{i}_{j}");
+                        model.AddAbsEquality(absDiff, diff);
+                        // Подряд — |разница номеров урока| == 1, но только если оба урока в этот день.
+                        model.Add(absDiff == 1).OnlyEnforceIf(sameDay);
+                    }
+                }
             }
         }
 
@@ -273,6 +358,12 @@ public class ScheduleSolver
                 Message = "Ни одну строку учебного плана не удалось подготовить к расстановке — см. список причин.",
                 Warnings = warnings,
             };
+        }
+
+        foreach (var g in eligible)
+        {
+            if (groupOccurrenceSlots.TryGetValue(g.Id, out var ownSlots))
+                ApplyDayLimitAndPairing(g, ownSlots);
         }
 
         foreach (var set in teacherSlotSets.Values.Where(s => s.Count > 1))

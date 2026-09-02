@@ -24,6 +24,15 @@ public class ClassSubjectGroup
     /// <summary>Сколько уроков этого предмета/подгруппы в неделю — данные учебного плана.</summary>
     public int LessonsPerWeek { get; set; }
 
+    /// <summary>Сколько уроков этого предмета можно ставить в один день. 1 (по умолчанию) —
+    /// не больше одного в день; 2 и больше — при генерации допускается сдвоить (или сгруппировать)
+    /// несколько уроков в один день, если так удобнее по сетке.</summary>
+    public int MaxLessonsPerDay { get; set; } = 1;
+
+    /// <summary>Если в один день ставится больше одного урока (см. MaxLessonsPerDay) — должны ли
+    /// они идти подряд, без окна между ними ("сдвоенный" урок). Без эффекта при MaxLessonsPerDay == 1.</summary>
+    public bool PairedLessons { get; set; }
+
     /// <summary>Учитель, назначенный вести — заполняется на шаге "Назначения", может быть не заполнен.</summary>
     public int? TeacherId { get; set; }
     public Teacher? Teacher { get; set; }

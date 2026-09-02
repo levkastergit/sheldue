@@ -62,6 +62,10 @@
                                          Binding="{Binding GroupLabel, UpdateSourceTrigger=PropertyChanged}" Width="2.5*" />
                     <DataGridTextColumn Header="Уроков/нед."
                                          Binding="{Binding LessonsPerWeek, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                    <DataGridTextColumn Header="Уроков/день" ToolTipService.ToolTip="Максимум уроков этого предмета в один день. 1 — не больше одного в день; 2 и больше — при генерации расписания допускается несколько в один день (см. «Парные уроки»)."
+                                         Binding="{Binding MaxLessonsPerDay, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                    <DataGridCheckBoxColumn Header="Парные уроки" ToolTipService.ToolTip="Если в один день ставится больше одного урока этого предмета — идти подряд, без окна между ними. Работает только если «Уроков/день» больше 1."
+                                             Binding="{Binding PairedLessons, UpdateSourceTrigger=PropertyChanged}" Width="Auto" />
                     <DataGridTemplateColumn Header="" Width="60">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>

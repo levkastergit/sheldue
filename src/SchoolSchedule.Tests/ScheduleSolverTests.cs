@@ -28,6 +28,9 @@ public class ScheduleSolverTests
         return slots;
     }
 
+    private static SchoolDay DayOf(List<TimeSlot> slots, int timeSlotId) => slots.Single(t => t.Id == timeSlotId).Day;
+    private static int PeriodOf(List<TimeSlot> slots, int timeSlotId) => slots.Single(t => t.Id == timeSlotId).PeriodNumber;
+
     private static Room MakeRoom(int id, RoomType type, params Teacher[] pinnedTo)
     {
         var room = new Room { Id = id, Name = $"Каб.{id}", Capacity = 30, RoomTypeId = type.Id, RoomType = type };
@@ -35,7 +38,9 @@ public class ScheduleSolverTests
         return room;
     }
 
-    private static ClassSubjectGroup MakeGroup(int id, SchoolClass cls, Subject subject, Teacher? teacher, int lessonsPerWeek, string? groupLabel = null) => new()
+    private static ClassSubjectGroup MakeGroup(
+        int id, SchoolClass cls, Subject subject, Teacher? teacher, int lessonsPerWeek, string? groupLabel = null,
+        int maxLessonsPerDay = 1, bool pairedLessons = false) => new()
     {
         Id = id,
         ClassId = cls.Id,
@@ -46,6 +51,8 @@ public class ScheduleSolverTests
         Teacher = teacher,
         LessonsPerWeek = lessonsPerWeek,
         GroupLabel = groupLabel,
+        MaxLessonsPerDay = maxLessonsPerDay,
+        PairedLessons = pairedLessons,
     };
 
     [Fact]
@@ -328,5 +335,143 @@ public class ScheduleSolverTests
         var result = new ScheduleSolver().Generate(input);
 
         Assert.Equal(ScheduleGenerationStatus.NoData, result.Status);
+    }
+
+    [Fact]
+    public void Default_max_one_lesson_per_day_spreads_occurrences_across_different_days()
+    {
+        var classA = new SchoolClass { Id = 1, Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+        var subject = new Subject { Id = 1, Name = "Математика" };
+        var teacher = new Teacher { Id = 1, FullName = "Иванова И.И." };
+        var ordinary = OrdinaryType();
+        var room = MakeRoom(1, ordinary);
+
+        var settings = new ScheduleSettings { DaysPerWeek = 5, PeriodsPerDayShift1 = 6 };
+        var timeSlots = GenerateSlotsWithIds(settings);
+        var input = new ScheduleInput
+        {
+            Rooms = [room],
+            TimeSlots = timeSlots,
+            // MaxLessonsPerDay не задан явно — дефолт модели/MakeGroup равен 1.
+            Groups = [MakeGroup(1, classA, subject, teacher, 3)],
+            Unavailabilities = [],
+            TimeLimit = ShortLimit,
+        };
+
+        var result = new ScheduleSolver().Generate(input);
+
+        Assert.Equal(ScheduleGenerationStatus.Success, result.Status);
+        var days = result.Lessons.Select(l => DayOf(timeSlots, l.TimeSlotId)).ToList();
+        Assert.Equal(days.Count, days.Distinct().Count());
+    }
+
+    [Fact]
+    public void Max_one_lesson_per_day_is_infeasible_when_lessons_exceed_available_days()
+    {
+        var classA = new SchoolClass { Id = 1, Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+        var subject = new Subject { Id = 1, Name = "Математика" };
+        var teacher = new Teacher { Id = 1, FullName = "Иванова И.И." };
+        var ordinary = OrdinaryType();
+        var room = MakeRoom(1, ordinary);
+
+        // Только 2 дня в неделе, но 3 урока в неделю и не больше 1 в день — физически не влезает.
+        var settings = new ScheduleSettings { DaysPerWeek = 2, PeriodsPerDayShift1 = 5 };
+        var input = new ScheduleInput
+        {
+            Rooms = [room],
+            TimeSlots = GenerateSlotsWithIds(settings),
+            Groups = [MakeGroup(1, classA, subject, teacher, 3, maxLessonsPerDay: 1)],
+            Unavailabilities = [],
+            TimeLimit = ShortLimit,
+        };
+
+        var result = new ScheduleSolver().Generate(input);
+
+        Assert.Equal(ScheduleGenerationStatus.Infeasible, result.Status);
+    }
+
+    [Fact]
+    public void Increasing_max_lessons_per_day_allows_more_than_one_lesson_on_the_same_day()
+    {
+        var classA = new SchoolClass { Id = 1, Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+        var subject = new Subject { Id = 1, Name = "Математика" };
+        var teacher = new Teacher { Id = 1, FullName = "Иванова И.И." };
+        var ordinary = OrdinaryType();
+        var room = MakeRoom(1, ordinary);
+
+        // Тот же сценарий, что и в тесте на Infeasible выше, но с MaxLessonsPerDay=2 — теперь решаемо.
+        var settings = new ScheduleSettings { DaysPerWeek = 2, PeriodsPerDayShift1 = 5 };
+        var timeSlots = GenerateSlotsWithIds(settings);
+        var input = new ScheduleInput
+        {
+            Rooms = [room],
+            TimeSlots = timeSlots,
+            Groups = [MakeGroup(1, classA, subject, teacher, 3, maxLessonsPerDay: 2)],
+            Unavailabilities = [],
+            TimeLimit = ShortLimit,
+        };
+
+        var result = new ScheduleSolver().Generate(input);
+
+        Assert.Equal(ScheduleGenerationStatus.Success, result.Status);
+        var days = result.Lessons.Select(l => DayOf(timeSlots, l.TimeSlotId)).ToList();
+        Assert.Contains(days.GroupBy(d => d), g => g.Count() == 2);
+    }
+
+    [Fact]
+    public void Paired_lessons_forces_two_same_day_occurrences_to_be_adjacent_periods()
+    {
+        var classA = new SchoolClass { Id = 1, Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+        var subject = new Subject { Id = 1, Name = "Физкультура" };
+        var teacher = new Teacher { Id = 1, FullName = "Сидоров С.С." };
+        var ordinary = OrdinaryType();
+        var room = MakeRoom(1, ordinary);
+
+        // Один-единственный день в неделе — оба урока гарантированно попадут в один день.
+        var settings = new ScheduleSettings { DaysPerWeek = 1, PeriodsPerDayShift1 = 6 };
+        var timeSlots = GenerateSlotsWithIds(settings);
+        var input = new ScheduleInput
+        {
+            Rooms = [room],
+            TimeSlots = timeSlots,
+            Groups = [MakeGroup(1, classA, subject, teacher, 2, maxLessonsPerDay: 2, pairedLessons: true)],
+            Unavailabilities = [],
+            TimeLimit = ShortLimit,
+        };
+
+        var result = new ScheduleSolver().Generate(input);
+
+        Assert.Equal(ScheduleGenerationStatus.Success, result.Status);
+        var periods = result.Lessons.Select(l => PeriodOf(timeSlots, l.TimeSlotId)).OrderBy(p => p).ToList();
+        Assert.Equal(2, periods.Count);
+        Assert.Equal(1, periods[1] - periods[0]);
+    }
+
+    [Fact]
+    public void Paired_lessons_without_enough_room_for_two_consecutive_periods_is_infeasible()
+    {
+        // Единственный день, но недоступность учителя разбивает единственную возможную пару
+        // подряд идущих уроков — с включённым PairedLessons решения нет (без пары — было бы).
+        var classA = new SchoolClass { Id = 1, Name = "5А", Grade = 5, Shift = Shift.Первая, StudentCount = 25 };
+        var subject = new Subject { Id = 1, Name = "Физкультура" };
+        var teacher = new Teacher { Id = 1, FullName = "Сидоров С.С." };
+        var ordinary = OrdinaryType();
+        var room = MakeRoom(1, ordinary);
+
+        var settings = new ScheduleSettings { DaysPerWeek = 1, PeriodsPerDayShift1 = 3 };
+        var timeSlots = GenerateSlotsWithIds(settings);
+        var input = new ScheduleInput
+        {
+            Rooms = [room],
+            TimeSlots = timeSlots,
+            Groups = [MakeGroup(1, classA, subject, teacher, 2, maxLessonsPerDay: 2, pairedLessons: true)],
+            // Урок №2 недоступен — из уроков 1 и 3 остаются годными, а они не подряд.
+            Unavailabilities = [new TeacherUnavailability { TeacherId = teacher.Id, Day = SchoolDay.Понедельник, PeriodNumber = 2 }],
+            TimeLimit = ShortLimit,
+        };
+
+        var result = new ScheduleSolver().Generate(input);
+
+        Assert.Equal(ScheduleGenerationStatus.Infeasible, result.Status);
     }
 }
